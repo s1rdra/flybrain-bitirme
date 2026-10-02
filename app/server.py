@@ -56,6 +56,7 @@ def is_calistir(is_id, kosul):
                 lezyon=kosul.get('lezyon', []),
                 sure=min(max(float(kosul.get('sure', 0.5)), 0.05), 5.0),
                 canli=kosul.get('canli') or None,
+                dunya=kosul.get('dunya') or None,
                 seed=kosul.get('seed'),
                 ilerleme=ilerleme,
             )

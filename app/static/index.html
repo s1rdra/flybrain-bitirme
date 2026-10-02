@@ -158,6 +158,14 @@ td.nt{color:var(--dim);font-size:11px}
     <div class="chips" id="lesions"></div>
     <div class="hint">Öneri: <span class="chip" data-les="CB0248">CB0248</span> şeker devresindeki GABA freni</div>
 
+    <h2>Açık dünya</h2>
+    <label class="opt"><input type="checkbox" id="dunyaOn"> Dünyada çalıştır (kapalı döngü)</label>
+    <label class="opt"><input type="checkbox" id="kusOn" checked> Kuş gölgesi geçsin (yaklaşan tehdit)</label>
+    <label class="opt"><input type="checkbox" id="temelOn" checked> Temel yürüme (omurilik ritmi varsayımı)</label>
+    <div class="opt">Harita no <b id="dSeed" style="color:var(--text)">1</b>
+      <button class="btn" id="dYeni" style="margin-left:auto">Yeni harita</button></div>
+    <div class="hint">Bahçede ağaçlar (gölge, engel), meyveler (koku + temasta şeker tadı), çiçekler (koku + nektar), su (nem), sıcak taşlar ve gezen bir dişi sinek (feromon) var. Her 20 ms'de sineğin konumuna göre duyu nöronları yeniden uyarılır, beynin çıkışı da sineği hareket ettirir. Açıkken soldaki Duyular kullanılmaz; maddeler ve lezyonlar geçerlidir.</div>
+
     <h2>Deney</h2>
     <div class="opt">Canlı beyin
       <select id="canli">
@@ -385,6 +393,8 @@ function arayuzKur() {
   document.querySelectorAll('[data-les]').forEach(c => c.onclick = () => addLes(c.dataset.les));
 
   $('#run').onclick = calistir;
+  $('#dYeni').onclick = () => { $('#dSeed').textContent = Math.floor(Math.random() * 9000) + 1; };
+  $('#dunyaOn').onchange = () => { if ($('#dunyaOn').checked && +$('#dur').value < 2) $('#dur').value = '3'; };
 }
 function drawLes() {
   const b = $('#lesions'); b.innerHTML = '';
@@ -394,13 +404,14 @@ function msg(t, err) { const m = $('#msg'); m.textContent = t; m.className = 'ms
 
 function kosulTopla() {
   const duyular = {};
-  for (const [k, s] of Object.entries(S.sense)) if (s.on && s.hz > 0) duyular[k] = s.hz;
+  if (!$('#dunyaOn').checked) for (const [k, s] of Object.entries(S.sense)) if (s.on && s.hz > 0) duyular[k] = s.hz;
   const ilac = {};
   for (const k of Object.keys(META.nt)) if (S.nt[k] !== 1) ilac[k] = S.nt[k];
   return { duyular, ilac, lezyon: S.les.map(t => 'type:' + t), sure: +$('#dur').value,
            maddeler: Object.keys(S.madde).filter(m => S.madde[m] > 0),
            dozlar: Object.fromEntries(Object.entries(S.madde).filter(([, d]) => d > 0)),
-           seed: $('#seed').checked ? 42 : null, canli: $('#canli').value || null };
+           seed: $('#seed').checked ? 42 : null, canli: $('#canli').value || null,
+           dunya: $('#dunyaOn').checked ? { seed: +$('#dSeed').textContent, kus: $('#kusOn').checked, temel_yurume: $('#temelOn').checked } : null };
 }
 
 async function calistir() {
@@ -444,6 +455,7 @@ function etiket(k) {
   if (k.maddeler && k.maddeler.length) p.push(k.maddeler.map(m => `${META.ilac_hazir[m].ad.split(' (')[0]} %${Math.round(k.dozlar[m] * 100)}`).join(' + '));
   else for (const [n, x] of Object.entries(k.ilac)) p.push(`${META.nt[n].split(' ')[0]} %${Math.round(x * 100)}`);
   for (const l of k.lezyon) p.push('−' + l.replace('type:', ''));
+  if (k.dunya) p.push(`dünya #${k.dunya.seed}`);
   if (k.canli) p.push('canlı');
   return p.length ? p.join(' · ') : 'Uyaran yok (sessiz beyin)';
 }
@@ -777,8 +789,8 @@ const fly = (() => {
     cv.onpointerdown = e => { drag = [e.clientX, e.clientY, camYaw, camPitch]; cv.setPointerCapture(e.pointerId); };
     cv.onpointermove = e => { if (!drag) return; camYaw = drag[2] + (e.clientX - drag[0]) * 0.012; camPitch = Math.max(0.05, Math.min(1.5, drag[3] + (e.clientY - drag[1]) * 0.01)); };
     cv.onpointerup = () => drag = null;
-    cv.onwheel = e => { e.preventDefault(); camDist = Math.max(0.6, Math.min(2.2, camDist * Math.exp(e.deltaY * 0.001))); };
-    cv.ondblclick = () => { camYaw = -0.75; camPitch = 0.55; camDist = 0.8; };
+    cv.onwheel = e => { e.preventDefault(); camDist = Math.max(0.6, Math.min(world ? 45 : 2.2, camDist * Math.exp(e.deltaY * 0.0012))); };
+    cv.ondblclick = () => { camYaw = -0.75; camPitch = world ? 0.75 : 0.55; camDist = world ? 8 : 0.8; };
     requestAnimationFrame(loop);
   }
 
@@ -816,21 +828,24 @@ const fly = (() => {
       }
       seri[d.id] = a; seriHz[d.id] = ah;
     });
+    world = res.dunya ? dunyaKur(res.dunya) : null;
+    if (world) { camDist = 8; camPitch = 0.75; buyuk(true); }
     reset();
   }
 
   function reset() {
     x = 0; y = 0; th = 0; leg = 0; jump = 0; last = -1;
-    trail = [[0, 0]]; yol = 0; vNow = 0; omNow = 0; alt = 0; kalkis = 0; ucuyor = false;
+    trail = world ? [] : [[0, 0]]; yol = 0; vNow = 0; omNow = 0; alt = 0; kalkis = 0; ucuyor = false;
     for (const k in act) act[k] = 0;
     const d = r ? r.kosul.duyular : {};
     const tat = Object.keys(TAT_RENK).filter(k => d[k]);
-    food = tat.length ? { x: 0, y: 30, renk: tat.map(k => TAT_RENK[k]) } : null;
+    food = (!world && tat.length) ? { x: 0, y: 30, renk: tat.map(k => TAT_RENK[k]) } : null;
   }
 
   function step(f) {
     const dt = r.bin_ms / 1000;
     for (const k in act) act[k] = seri[k] ? seri[k][f] : 0;
+    if (world) { dunyaAdim(f); jump = Math.max(jump * Math.pow(0.02, dt), act.kacis); return; }
     // ileri/geri ve sol/sağ nöronları birbirine karşı yarışır: farkları hareketi belirler
     const hz = k => seriHz[k] ? seriHz[k][f] : 0, cl = q => Math.max(-1, Math.min(1, q));
     // uçuş: dev lif (kaçış) patlaması sineği havalandırır, DNg02 kanat gücü uçuşu sürdürür
@@ -857,7 +872,7 @@ const fly = (() => {
       if (f < last) reset();
       while (last < f) step(++last);
       draw(t / 1000);
-      $('#flyact').innerHTML = etiket();
+      $('#flyact').innerHTML = etiket() + (world && world.su ? ' · ' + dunyaEtiket() : '');
     } else if (!r && !$('#flybox').classList.contains('min')) {
       draw(t / 1000);
     }
@@ -922,6 +937,154 @@ const fly = (() => {
     }
   }
 
+  // ------------------------------------------------------------ açık dünya (kapalı döngü sonucu)
+  // Sunucu sineğin dünyadaki yolunu (iz) ve her 20 ms'deki duyu girdilerini döndürür.
+  // Burada yalnızca çizilir; hareket beyinden gelir, burada uydurulmaz.
+  const MM = 16;                                   // 1 mm = 16 çizim birimi
+  const AGAC_GOVDE = [150, 120, 90], AGAC_TAC = [80, 200, 120], ELMA = [255, 90, 90], MUZ = [255, 215, 90],
+        SAP = [110, 190, 110], SU = [120, 210, 255], TAS = [255, 140, 80], DISI = [255, 150, 210],
+        CICEK_RENK = { pembe: [255, 130, 190], mor: [190, 140, 255], beyaz: [235, 240, 255], sari: [255, 225, 110] };
+  let world = null;                                // {W, pts:[[x,y,z,renk,b]], iz}
+  function dunyaKur(W) {
+    const pts = [];
+    const ga = Math.PI * (3 - Math.sqrt(5));
+    const kure = (cx, cy, cz, rx, ry, rz, n, renk, b = 1, f = null) => {
+      for (let i = 0; i < n; i++) {
+        const zz = 1 - (i + 0.5) / n * 2, rr = Math.sqrt(1 - zz * zz), a = i * ga;
+        const p = [Math.cos(a) * rr, zz, Math.sin(a) * rr];
+        if (f && !f(p)) continue;
+        pts.push([cx + p[0] * rx, cy + p[1] * ry, cz + p[2] * rz, renk, b]);
+      }
+    };
+    const hat = (a, b2, n, renk, br = 1) => { for (let i = 0; i <= n; i++) { const t = i / n; pts.push([a[0] + (b2[0] - a[0]) * t, a[1] + (b2[1] - a[1]) * t, a[2] + (b2[2] - a[2]) * t, renk, br]); } };
+    for (const o of W.harita.nesneler) {
+      const X = o.x * MM, Y = o.y * MM, R = o.r * MM;
+      if (o.tip === 'agac') {
+        const H = o.boy * MM;
+        for (let h = 0; h < H; h += 22) {             // gövde: halkalar (kök kısmı geniş)
+          const rr = R * (1 + 0.6 * Math.exp(-h / 40));
+          for (let a = 0; a < 18; a++) { const t = a / 18 * Math.PI * 2 + h * 0.03; pts.push([X + Math.cos(t) * rr, Y + Math.sin(t) * rr, h, AGAC_GOVDE, 0.8]); }
+        }
+        for (let k = 0; k < 4; k++) { const t = k * 1.7; hat([X, Y, H * 0.55], [X + Math.cos(t) * o.tac * MM * 0.6, Y + Math.sin(t) * o.tac * MM * 0.6, H * 0.85], 14, AGAC_GOVDE, 0.7); }
+        kure(X, Y, H, o.tac * MM, o.tac * MM, o.tac * MM * 0.7, 700, AGAC_TAC, 0.55);
+        for (let a = 0; a < 60; a++) { const t = a / 60 * Math.PI * 2; pts.push([X + Math.cos(t) * o.tac * MM, Y + Math.sin(t) * o.tac * MM, 0, [60, 110, 80], 0.5]); } // gölge sınırı
+      } else if (o.tip === 'meyve') {
+        if (o.tur === 'muz') {
+          for (let i = 0; i < 26; i++) {               // kavisli muz
+            const t = i / 25 - 0.5, cx = X + t * R * 3.2, cy = Y + (t * t - 0.08) * R * 2.2;
+            for (let a = 0; a < 14; a++) { const q = a / 14 * Math.PI * 2; pts.push([cx, cy + Math.cos(q) * R * 0.45, R * 0.5 + Math.sin(q) * R * 0.45, MUZ, 1]); }
+          }
+        } else {
+          kure(X, Y, R, R, R, R * 0.95, 380, ELMA, 1);
+          hat([X, Y, R * 1.9], [X + 6, Y + 4, R * 2.5], 6, SAP, 1);
+        }
+      } else if (o.tip === 'cicek') {
+        const H = o.boy * MM, c = CICEK_RENK[o.renk] || CICEK_RENK.pembe;
+        hat([X, Y, 0], [X, Y, H], 26, SAP, 0.9);
+        hat([X, Y, H * 0.35], [X + 26, Y + 6, H * 0.5], 8, SAP, 0.8);   // yaprak sapı
+        kure(X, Y, H, 11, 11, 7, 70, [255, 225, 110], 1.2);
+        for (let k = 0; k < 6; k++) {                   // taç yapraklar
+          const t = k / 6 * Math.PI * 2, px = X + Math.cos(t) * 26, py = Y + Math.sin(t) * 26;
+          for (let a = 0; a < 26; a++) { const q = a / 26 * Math.PI * 2; const ex = Math.cos(q) * 16, ey = Math.sin(q) * 8;
+            pts.push([px + ex * Math.cos(t) - ey * Math.sin(t), py + ex * Math.sin(t) + ey * Math.cos(t), H + 2 + Math.abs(ex) * 0.15, c, 1]); }
+        }
+      } else if (o.tip === 'su') {
+        kure(X, Y, 4, R, R, 18, 300, SU, 0.9, p => p[2] > -0.2);
+      } else if (o.tip === 'tas') {
+        kure(X, Y, 0, R, R * 0.8, R * 0.55, 320, TAS, 0.85, p => p[2] > -0.1);
+      }
+    }
+    // koku haleleri (λ = 14 mm): yerde silik halkalar
+    for (const o of W.harita.nesneler) if (o.tip === 'meyve' || o.tip === 'cicek') {
+      const c = o.tip === 'meyve' ? [255, 190, 90] : [190, 140, 255];
+      for (const rr of [1, 2]) for (let a = 0; a < 70; a++) { if (a % 2) continue; const t = a / 70 * Math.PI * 2;
+        pts.push([o.x * MM + Math.cos(t) * 14 * rr * MM, o.y * MM + Math.sin(t) * 14 * rr * MM, 0, c, 0.35 / rr]); }
+    }
+    return { W, pts, iz: W.iz };
+  }
+  function izAl(f) {   // kare -> dünya durumu (20 ms adımlar arasında doğrusal)
+    const iz = world.iz, t = f * r.bin_ms / 1000, adim = world.W.adim_ms / 1000;
+    const i = Math.min(iz.length - 1, Math.floor(t / adim)), j = Math.min(iz.length - 1, i + 1);
+    const u = Math.min(1, Math.max(0, (t - i * adim) / adim)), a = iz[i], b2 = iz[j];
+    let dth = b2[3] - a[3];
+    return { x: a[1] + (b2[1] - a[1]) * u, y: a[2] + (b2[2] - a[2]) * u, th: a[3] + dth * u, alt: a[4] + (b2[4] - a[4]) * u,
+             fx: a[5] + (b2[5] - a[5]) * u, fy: a[6] + (b2[6] - a[6]) * u, e: a, i };
+  }
+  function dunyaAdim(f) {
+    const s = izAl(f), dt = r.bin_ms / 1000;
+    const nx = s.x * MM, ny = s.y * MM;
+    const sp = Math.hypot(nx - x, ny - y) / dt / MM;          // mm/s
+    const ileri = Math.sin(th) * (nx - x) + Math.cos(th) * (ny - y) >= 0 ? 1 : -1;
+    omNow = f > 0 ? (s.th - th) / dt : 0;
+    vNow = s.alt > 0.3 ? 0 : ileri * sp * 110 / 16;
+    if (f > 0) yol += ileri * sp * dt * MM;
+    x = nx; y = ny; th = s.th; alt = s.alt;
+    leg += (Math.abs(vNow) * 0.09 + Math.abs(omNow) * 1.4) * dt;
+    const lt = trail[trail.length - 1];
+    if (!lt || Math.hypot(x - lt[0], y - lt[1]) > 6) { trail.push([x, y]); if (trail.length > 1500) trail.shift(); }
+    world.su = s;
+  }
+  function dunyaCiz(T) {
+    const s = world.su; if (!s) return;
+    for (const q of world.pts) nokta(P(q[0], q[1], q[2]), q[3], q[4]);
+    // arena sınırı
+    const A = world.W.harita.arena * MM;
+    for (let k = -A; k <= A; k += A / 40) for (const [px, py] of [[k, -A], [k, A], [-A, k], [A, k]]) nokta(P(px, py, 0), [90, 120, 140], 0.6);
+    // dişi sinek (gövde noktaları, pembe)
+    const fe = world.iz[Math.min(world.iz.length - 1, s.i + 3)], fb = world.iz[Math.max(0, s.i - 3)];
+    const fth = Math.atan2(fe[5] - fb[5], fe[6] - fb[6]) || 0;
+    const c = Math.cos(fth), sn = Math.sin(fth), FX = s.fx * MM, FY = s.fy * MM;
+    for (let i = 0; i < BODY.length; i += 2) {
+      const q = BODY[i], lx = q[0] * 1.12, ly = q[1] * 1.12, lz = q[2] * 1.12;
+      nokta(P(FX + lx * c + ly * sn, FY - lx * sn + ly * c, lz + 6), q[3] === GOZ ? GOZ : DISI, q[4] * 0.9);
+    }
+    for (let a = 0; a < 40; a++) { const t = a / 40 * Math.PI * 2; nokta(P(FX + Math.cos(t) * 10 * MM, FY + Math.sin(t) * 10 * MM, 0), DISI, 0.35); } // feromon halesi
+    // kuş gölgesi: yaklaşırken büyüyen koyu leke
+    const k = s.e[10];
+    if (k) {
+      const dist = (1 - Math.sin(k.p * Math.PI)) * 40 + 4, rad = (6 + 10 * Math.sin(k.p * Math.PI)) * MM;
+      const gx = x + Math.sin(k.aci) * dist * MM, gy = y + Math.cos(k.aci) * dist * MM;
+      for (let i = 0; i < 260; i++) { const rr = Math.sqrt((i * 0.618) % 1) * rad, t = i * 2.39996; nokta(P(gx + Math.cos(t) * rr, gy + Math.sin(t) * rr, 0.5), [40, 40, 60], 1.2); }
+      for (let a = 0; a < 50; a++) { const t = a / 50 * Math.PI * 2; nokta(P(gx + Math.cos(t) * rad, gy + Math.sin(t) * rad, 0.5), [255, 92, 138], 1); }
+    }
+  }
+  function miniHarita(CW, CH) {   // sağ altta kuşbakışı harita (CSS px)
+    const S2 = Math.min(150, CW * 0.28), ox = CW - S2 - 10, oy = CH - S2 - 22, A = world.W.harita.arena;
+    const m = (wx, wy) => [ox + (wx + A) / (2 * A) * S2, oy + (A - wy) / (2 * A) * S2];
+    ctx.fillStyle = 'rgba(11,17,24,.85)'; ctx.strokeStyle = 'rgba(60,80,100,1)'; ctx.lineWidth = 1;
+    ctx.fillRect(ox, oy, S2, S2); ctx.strokeRect(ox, oy, S2, S2);
+    const renk = { agac: 'rgba(80,200,120,.5)', meyve: '#ff5a5a', cicek: '#be8cff', su: '#78d2ff', tas: '#ff8c50' };
+    for (const o of world.W.harita.nesneler) {
+      const [px, py] = m(o.x, o.y); ctx.fillStyle = renk[o.tip];
+      const rr = Math.max(1.6, (o.tip === 'agac' ? o.tac : o.r) / (2 * A) * S2);
+      ctx.beginPath(); ctx.arc(px, py, rr, 0, 7); ctx.fill();
+    }
+    const s = world.su;
+    ctx.strokeStyle = 'rgba(200,255,120,.9)'; ctx.beginPath();
+    for (let i = 0; i <= s.i; i++) { const e = world.iz[i], [px, py] = m(e[1], e[2]); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.stroke();
+    const [dx, dy] = m(s.fx, s.fy); ctx.fillStyle = '#ff96d2'; ctx.beginPath(); ctx.arc(dx, dy, 2.6, 0, 7); ctx.fill();
+    const [px, py] = m(s.x, s.y);
+    ctx.fillStyle = '#66FF9E'; ctx.beginPath();
+    ctx.moveTo(px + Math.sin(s.th) * 6, py - Math.cos(s.th) * 6);
+    ctx.lineTo(px + Math.sin(s.th + 2.5) * 4, py - Math.cos(s.th + 2.5) * 4);
+    ctx.lineTo(px + Math.sin(s.th - 2.5) * 4, py - Math.cos(s.th - 2.5) * 4); ctx.fill();
+    if (s.e[10]) { ctx.fillStyle = '#FF5C8A'; ctx.font = 'bold 10px ui-monospace,monospace'; ctx.fillText('⚠ KUŞ GÖLGESİ', ox, oy - 6); }
+    ctx.fillStyle = 'rgba(124,139,157,.9)'; ctx.font = '9px ui-monospace,monospace'; ctx.fillText('harita', ox + 3, oy + 10);
+  }
+  function dunyaEtiket() {
+    const s = world.su; if (!s) return '';
+    const e = s.e, d = e[7], p = [];
+    if (e[8]) p.push(`<b>Temas: ${{ meyve: 'meyve', cicek: 'çiçek', su: 'su' }[e[8]]}${e[9] ? ' — yiyor' : ''}</b>`);
+    const ad = { meyve_koku: 'meyve kokusu', cicek_koku: 'çiçek kokusu', feromon: 'feromon', tat: 'tat', sicak: 'sıcak', nem: 'nem', tehdit: 'gölge' };
+    const al = Object.entries(d).filter(([k, v]) => ad[k] && Math.max(v[0] || 0, v[1] || 0) > 5)
+      .sort((a, b2) => Math.max(b2[1][0], b2[1][1] || 0) - Math.max(a[1][0], a[1][1] || 0)).slice(0, 3)
+      .map(([k, v]) => v[1] == null ? `${ad[k]} ${v[0].toFixed(0)}` : `${ad[k]} ${v[0].toFixed(0)}/${v[1].toFixed(0)}`);
+    if (al.length) p.push('algılıyor: ' + al.join(', ') + ' Hz' + (al.some(a => a.includes('/')) ? ' (sol/sağ)' : ''));
+    if (d.isik && d.isik[0] < 5) p.push('gölgede');
+    return p.join(' · ');
+  }
+
   // ------------------------------------------------------------ çizim
   function draw(T) {
     ctx.setTransform(cv.width / VW, 0, 0, cv.height / VH, 0, 0);
@@ -932,7 +1095,7 @@ const fly = (() => {
     ctx.globalCompositeOperation = 'lighter';
 
     // zemin: noktalı ızgara (sinek yürüdükçe kayar)
-    const g = 14, R = 9, gx0 = Math.round(x / g) * g, gy0 = Math.round(y / g) * g;
+    const g = world ? Math.max(14, 5 * MM * Math.max(1, Math.round(camDist / 4))) : 14, R = world ? 14 : 9, gx0 = Math.round(x / g) * g, gy0 = Math.round(y / g) * g;
     for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) {
       const p = P(gx0 + i * g, gy0 + j * g, 0);
       if (p) { const a = Math.max(0, 1 - Math.hypot(i, j) / R); ctx.fillStyle = `rgba(70,110,130,${0.5 * a})`; ctx.fillRect(p[0] - 0.6, p[1] - 0.6, 1.2, 1.2); }
@@ -981,9 +1144,11 @@ const fly = (() => {
       }
     }
 
+    if (world) dunyaCiz(T);
     // ---- sinek
-    // gövde (sabit noktalar)
-    for (const q of BODY) nokta(P(...yerel(q[0], q[1], q[2])), q[3], q[4]);
+    // gövde (sabit noktalar); uzaktan bakarken seyrelt
+    const adimB = camDist > 8 ? 4 : camDist > 2.5 ? 2 : 1;
+    for (let i = 0; i < BODY.length; i += adimB) { const q = BODY[i]; nokta(P(...yerel(q[0], q[1], q[2])), q[3], q[4] * (adimB > 1 ? 1.3 : 1)); }
     // bacaklar: koksa, femur, tibia, 5 tarsomer + pençeler (üçlü yürüyüş)
     const tuck = Math.max(jump, alt);
     for (let side = -1; side <= 1; side += 2) for (let i = 0; i < 3; i++) {
@@ -1134,11 +1299,13 @@ const fly = (() => {
       if ((r.kosul.maddeler || []).length) ad.push(...r.kosul.maddeler.map(m => META.ilac_hazir[m].ad.split(' (')[0]));
       else if (Object.keys(r.kosul.ilac || {}).length) ad.push('ilaç');
       if ((r.kosul.lezyon || []).length) ad.push('lezyon');
+      if (r.kosul.dunya) ad.unshift(`açık dünya #${r.kosul.dunya.seed}`);
       ctx.fillText(ad.length ? ad.join(' + ') : 'uyaran yok', 8, CH - 8);
     }
     ctx.fillStyle = 'rgba(78,93,110,.9)';
     if (CW > 420) ctx.fillText('sürükle: döndür · tekerlek: yakınlaş', CW - 196, 13);
     pusula();
+    if (world) miniHarita(CW, CH);
   }
 
   // sol üst: pusula + yön/yol bilgisi, üst orta: anlık hareket

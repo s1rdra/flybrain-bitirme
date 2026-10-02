@@ -162,6 +162,7 @@ SUPER_SIRA = ['sensory', 'sensory_ascending', 'optic', 'visual_projection',
 
 
 class Beyin:
+    DAVRANISLAR = None   # aşağıda modül sabitine bağlanır (dunya.py kullanır)
     """Ağı bir kere yükler, her deneyde kopyası üzerinde çalışır."""
 
     def __init__(self, log=print):
@@ -229,7 +230,7 @@ class Beyin:
 
     # ------------------------------------------------------------ simülasyon
     def calistir(self, duyular=None, nt_olcek=None, lezyon=None, sure=0.5, seed=None,
-                 ilerleme=None, canli=None):
+                 ilerleme=None, canli=None, dunya=None):
         """duyular: {anahtar: hz}; nt_olcek: {nt: çarpan}; lezyon: [spec]; sure: sn."""
         t_start = time.time()
         w = self.w.copy()
@@ -262,10 +263,23 @@ class Beyin:
         n_steps = int(round(sure / DT))
         rng = np.random.default_rng(seed)
         sigma = CANLILIK.get(canli, 0.0) if canli else 0.0
+        dw = None
+        kontrol = None
+        if dunya is not None:   # açık dünya: duyular sineğin konumundan gelir (kapalı döngü)
+            import dunya as D
+            harita = dunya.get('harita') or D.harita_olustur(int(dunya.get('seed', 1)))
+            dw = D.Dunya(self, harita, sure, canli=canli, taban=TABAN,
+                         temel_yurume=dunya.get('temel_yurume', True), kus=dunya.get('kus', True),
+                         seed=int(dunya.get('seed', 1)))
+            kontrol = dw.adim_at
+            stim = []
         st, si = _run(w, stim, rng, n_steps, ilerleme, sigma=sigma,
-                      uyum=UYUM_DA if canli else 0.0, bias=bias)
+                      uyum=UYUM_DA if canli else 0.0, bias=bias, kontrol=kontrol)
         sim_sn = time.time() - t_start
-        return self._ozet(st, si, n_steps, sure, sim_sn, stim, sus, canli)
+        out = self._ozet(st, si, n_steps, sure, sim_sn, stim, sus, canli)
+        if dw is not None:
+            out['dunya'] = dw.ozet()
+        return out
 
     def _ozet(self, st, si, n_steps, sure, sim_sn, stim, sus, canli=None):
         n_bins = int(np.ceil(n_steps / BIN_STEPS))
@@ -329,7 +343,7 @@ class Beyin:
         }
 
 
-def _run(w, stim, rng, n_steps, ilerleme=None, sigma=0.0, uyum=0.0, bias=None):
+def _run(w, stim, rng, n_steps, ilerleme=None, sigma=0.0, uyum=0.0, bias=None, kontrol=None):
     """sim.run_trial ile aynı model; süre ayarlı ve ilerleme bildirimli.
 
     sigma>0: zar gürültüsü (canlı mod), uyum>0: ateşleme uyumu, bias: dinlenme kayması [mV].
@@ -362,7 +376,15 @@ def _run(w, stim, rng, n_steps, ilerleme=None, sigma=0.0, uyum=0.0, bias=None):
     is_exc[stim_idx] = True
 
     spk_t, spk_i = [], []
+    KA = 200                     # kapalı döngü: her 20 ms'de dünya güncellenir
+    son = 0                      # spk_i içinde son kontrolden beri eklenenlerin başı
     for t in range(n_steps):
+        if kontrol is not None and t % KA == 0:
+            yeni = np.concatenate(spk_i[son:]) if len(spk_i) > son else np.zeros(0, dtype=np.int32)
+            son = len(spk_i)
+            stim_idx, stim_p = kontrol(t * DT, yeni)
+            is_exc = np.zeros(n, dtype=bool)
+            is_exc[stim_idx] = True
         slot = t % DLY
         g += buf[slot]
         buf[slot] = 0.0
@@ -405,3 +427,6 @@ def _run(w, stim, rng, n_steps, ilerleme=None, sigma=0.0, uyum=0.0, bias=None):
     if spk_t:
         return np.concatenate(spk_t), np.concatenate(spk_i)
     return np.array([], dtype=np.int32), np.array([], dtype=np.int32)
+
+
+Beyin.DAVRANISLAR = DAVRANISLAR
