@@ -267,7 +267,7 @@ class Beyin:
         kontrol = None
         if dunya is not None:   # açık dünya: duyular sineğin konumundan gelir (kapalı döngü)
             import dunya as D
-            harita = dunya.get('harita') or D.harita_olustur(int(dunya.get('seed', 1)))
+            harita = dunya.get('harita') or D.harita_olustur(int(dunya.get('seed', 1)), dunya.get('tip', 'bahce'))
             dw = D.Dunya(self, harita, sure, canli=canli, taban=TABAN,
                          temel_yurume=dunya.get('temel_yurume', True), kus=dunya.get('kus', True),
                          seed=int(dunya.get('seed', 1)))

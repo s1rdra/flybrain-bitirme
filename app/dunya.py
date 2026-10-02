@@ -39,7 +39,12 @@ KANALLAR = {
                    'spec': ['type:ORN_DM1', 'type:ORN_DM4', 'type:ORN_VA2', 'type:ORN_DP1m']},
     'cicek_koku': {'ad': 'Çiçek kokusu (ester ORN, yaklaşık)', 'yan': True,
                    'spec': ['type:ORN_DM2', 'type:ORN_DL5', 'type:ORN_VA3']},
-    'feromon':    {'ad': 'Dişi feromonu (DA1 ORN)', 'yan': True, 'spec': ['type:ORN_DA1']},
+    # Not: önceki sürümde DA1 (Or67d, cVA) kullanılıyordu; cVA aslında ERKEK feromonudur ve
+    # erkekte kurlaşmayı bastırır. Dişi/sinek kokusunu algılayan Or47b (VA1v) daha doğru.
+    'feromon':    {'ad': 'Dişi kokusu (Or47b, VA1v ORN)', 'yan': True, 'spec': ['type:ORN_VA1v']},
+    # Kurlaşmada erkek dişiyi gözüyle takip eder; LC10a görsel nöronları bu takipte rol oynar
+    # (Ribeiro ve ark. 2018). Dişi görüş alanının hangi tarafındaysa o gözün LC10a'sı uyarılır.
+    'disi_gorme': {'ad': 'Dişiyi görme (LC10a)', 'yan': True, 'spec': ['type:LC10a']},
     'tat':        {'ad': 'Şeker tadı (temas)', 'yan': False, 'spec': ['sugar']},
     'isik':       {'ad': 'Işık (R1-6)', 'yan': True, 'spec': ['type:R1-6']},
     'sicak':      {'ad': 'Sıcaklık', 'yan': False, 'spec': ['subclass:heating']},
@@ -48,9 +53,14 @@ KANALLAR = {
 }
 
 
-def harita_olustur(seed=1):
-    """Rastgele ama tekrarlanabilir bir bahçe."""
+def harita_olustur(seed=1, tip='bahce'):
+    """Rastgele ama tekrarlanabilir bir bahçe ya da kur odası."""
     rng = np.random.default_rng(seed)
+    if tip == 'kur':   # laboratuvardaki kur odası gibi: küçük arena, sadece dişi
+        a = rng.uniform(0, 2 * math.pi)
+        return {'arena': 22.0, 'tip': 'kur', 'nesneler': [],
+                'disi': {'x': float(10 * math.sin(a)), 'y': float(10 * math.cos(a)), 'yon': float(rng.uniform(0, 2 * math.pi))},
+                'sinek': {'x': 0.0, 'y': 0.0, 'yon': float(rng.uniform(0, 2 * math.pi))}}
     nes = []
 
     def bos_yer(r, min_merkez=12.0):
@@ -87,7 +97,7 @@ def harita_olustur(seed=1):
             o['x'], o['y'] = float(18 * math.sin(a)), float(18 * math.cos(a))
             break
     dx, dy = bos_yer(2, 20)
-    return {'arena': ARENA, 'nesneler': nes,
+    return {'arena': ARENA, 'tip': 'bahce', 'nesneler': nes,
             'disi': {'x': dx, 'y': dy, 'yon': float(rng.uniform(0, 2 * math.pi))},
             'sinek': {'x': 0.0, 'y': 0.0, 'yon': float(rng.uniform(0, 2 * math.pi))}}
 
@@ -100,8 +110,10 @@ class Dunya:
         self.nes = harita['nesneler']
         self.x, self.y, self.th = harita['sinek']['x'], harita['sinek']['y'], harita['sinek']['yon']
         self.fx, self.fy, self.fth = harita['disi']['x'], harita['disi']['y'], harita['disi']['yon']
+        self.A = float(harita.get('arena', ARENA))
         self.alt = 0.0
         self.kalkis = 0.0
+        self.disi_hiz = 1.5 if harita.get('tip') == 'kur' else 3.0
         self.temel = temel_yurume
         self.canli = canli
         self.taban = taban or {}
@@ -184,10 +196,10 @@ class Dunya:
         nx = self.x + math.sin(self.th) * v * self.dt
         ny = self.y + math.cos(self.th) * v * self.dt
         # arena sınırı: yansı
-        if abs(nx) > ARENA - 2:
-            self.th = -self.th; nx = max(-ARENA + 2, min(ARENA - 2, nx))
-        if abs(ny) > ARENA - 2:
-            self.th = math.pi - self.th; ny = max(-ARENA + 2, min(ARENA - 2, ny))
+        if abs(nx) > self.A - 2:
+            self.th = -self.th; nx = max(-self.A + 2, min(self.A - 2, nx))
+        if abs(ny) > self.A - 2:
+            self.th = math.pi - self.th; ny = max(-self.A + 2, min(self.A - 2, ny))
         # ağaç gövdesine çarpma (uçarken taç altından geçer)
         for o in self.nes:
             if o['tip'] in ('agac', 'tas') and self.alt < 0.5:
@@ -200,11 +212,11 @@ class Dunya:
 
         # dişi: yavaş rastgele yürüyüş
         self.fth += self.rng.normal(0, 0.6) * self.dt * 3
-        self.fx += math.sin(self.fth) * 3.0 * self.dt
-        self.fy += math.cos(self.fth) * 3.0 * self.dt
-        if abs(self.fx) > ARENA - 5 or abs(self.fy) > ARENA - 5:
-            self.fth += math.pi; self.fx = max(-ARENA + 5, min(ARENA - 5, self.fx))
-            self.fy = max(-ARENA + 5, min(ARENA - 5, self.fy))
+        self.fx += math.sin(self.fth) * self.disi_hiz * self.dt
+        self.fy += math.cos(self.fth) * self.disi_hiz * self.dt
+        if abs(self.fx) > self.A - 3 or abs(self.fy) > self.A - 3:
+            self.fth += math.pi; self.fx = max(-self.A + 3, min(self.A - 3, self.fx))
+            self.fy = max(-self.A + 3, min(self.A - 3, self.fy))
 
         # 3) duyular
         s, c = math.sin(self.th), math.cos(self.th)
@@ -226,6 +238,21 @@ class Dunya:
                 elif o['tip'] == 'cicek':
                     tat = 70.0
         R['tat'] = (tat, None)
+        # dişiyi görme: görüş alanında (önde ±150°, 40 mm içinde) hangi taraftaysa o göz
+        ddx, ddy = self.fx - self.x, self.fy - self.y
+        dd = math.hypot(ddx, ddy)
+        rel = (math.atan2(ddx, ddy) - self.th + math.pi) % (2 * math.pi) - math.pi
+        gl, gr = 0.0, 0.0
+        if dd < 40 and abs(rel) < 2.6:
+            boyut = 2 * math.atan(1.25 / max(dd, 1.0))            # dişinin açısal büyüklüğü
+            hzg = min(120.0, 120.0 * boyut / 0.35)
+            if abs(rel) < 0.15:
+                gl = gr = 0.6 * hzg
+            elif rel > 0:
+                gr = hzg
+            else:
+                gl = hzg
+        R['disi_gorme'] = (gl, gr)
         # ışık: ağaç tacının altında gölge
         golge = any(o['tip'] == 'agac' and math.hypot(self.x - o['x'], self.y - o['y']) < o['tac'] for o in self.nes)
         isik = 3.0 if golge else 15.0
@@ -265,12 +292,18 @@ class Dunya:
         self.kayit.append([round(t_sn, 3), round(self.x, 3), round(self.y, 3), round(self.th, 4),
                            round(self.alt, 3), round(self.fx, 2), round(self.fy, 2),
                            {k2: [round(a, 1), None if b2 is None else round(b2, 1)] for k2, (a, b2) in R.items()},
-                           self.temas[0] if self.temas else None, 1 if yiyor else 0, kus_durum])
+                           self.temas[0] if self.temas else None, 1 if yiyor else 0, kus_durum,
+                           round(dd, 2)])
         if idx_l:
             return np.concatenate(idx_l), np.concatenate(p_l)
         return np.zeros(0, dtype=int), np.zeros(0)
 
     def ozet(self):
+        mesafe = [k[11] for k in self.kayit]
         return {'harita': self.h, 'kanallar': {k: v['ad'] for k, v in KANALLAR.items()},
+                'disi_ozet': {'baslangic_mm': mesafe[0] if mesafe else None,
+                              'en_yakin_mm': min(mesafe) if mesafe else None,
+                              'son_mm': mesafe[-1] if mesafe else None,
+                              'yakinda_sn': round(sum(1 for m in mesafe if m < 5) * self.dt, 2)},
                 'adim_ms': KONTROL_MS, 'iz': self.kayit,
                 'kus': self.kus}
