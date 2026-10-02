@@ -56,11 +56,41 @@ NT_LISTESI = {
     'serotonin':     'Serotonin',
     'octopamine':    'Oktopamin',
 }
+# Maddeler: nörotransmitter tipine göre ağırlık çarpanı (+ ağızdan alınınca tadı).
+# 'temsil': bu modelin o maddeyi ne kadar iyi taklit edebildiği (dürüstlük notu).
 ILAC_HAZIR = {
-    'pikrotoksin': {'ad': 'Pikrotoksin benzeri — GABA engelleyici', 'nt': {'gaba': 0.0}},
-    'diazepam':    {'ad': 'Diazepam benzeri — GABA güçlendirici',   'nt': {'gaba': 2.0}},
-    'imidakloprid': {'ad': 'İmidakloprid benzeri — ACh aşırı uyarım', 'nt': {'acetylcholine': 1.5}},
-    'ivermektin':  {'ad': 'İvermektin benzeri — glutamat freni artar', 'nt': {'glutamate': 2.0}},
+    'kafein': {'ad': 'Kafein', 'nt': {'dopamine': 1.5}, 'duyular': {'aci': 60}, 'temsil': 'kısmi',
+               'aciklama': 'Adenozin reseptörlerini bloke eder; sineklerde uyanıklığı dopamin sinyalini '
+                           'artırarak sağlar. Tadı acıdır: ağızdan alınınca acı tat nöronları da uyarılır.'},
+    'nikotin': {'ad': 'Nikotin', 'nt': {'acetylcholine': 1.6}, 'duyular': {'aci': 40}, 'temsil': 'iyi',
+                'aciklama': 'Nikotinik asetilkolin reseptörlerini uyarır; bitkinin doğal böcek ilacıdır. '
+                            'Yüksek dozda aşırı uyarım ve felç.'},
+    'alkol': {'ad': 'Alkol (etanol)', 'nt': {'gaba': 1.6, 'acetylcholine': 0.8}, 'temsil': 'kısmi',
+              'aciklama': 'GABA frenini güçlendirir, uyarıcı iletimi zayıflatır. Sinekler önce hareketlenir, '
+                          'sonra koordinasyonu bozulup sızar.'},
+    'thc': {'ad': 'THC (esrar)', 'nt': {}, 'temsil': 'hedef yok',
+            'aciklama': 'Böceklerde kannabinoid reseptörü (CB1/CB2) yoktur, yani THC\'nin sinek beyninde '
+                        'doğrudan hedefi bulunmaz. Modelde etkisizdir; sonuç ilaçsız deneyle aynı çıkmalı '
+                        '(iyi bir kontrol deneyi).'},
+    'kokain': {'ad': 'Kokain', 'nt': {'dopamine': 1.8, 'serotonin': 1.4}, 'temsil': 'kısmi',
+               'aciklama': 'Dopamin ve serotonin geri alımını engeller. Sineklerde aşırı hareketlilik, '
+                           'dönme ve titreme görülür.'},
+    'amfetamin': {'ad': 'Amfetamin', 'nt': {'dopamine': 2.2, 'octopamine': 1.5}, 'temsil': 'kısmi',
+                  'aciklama': 'Dopamin (böceklerde oktopamin de) salınımını artırır; uyarıcı.'},
+    'fluoksetin': {'ad': 'Fluoksetin (Prozac)', 'nt': {'serotonin': 1.8}, 'temsil': 'kısmi',
+                   'aciklama': 'Serotonin geri alımını engeller; serotonin sinyali uzar ve güçlenir.'},
+    'amitraz': {'ad': 'Amitraz (tarım ilacı)', 'nt': {'octopamine': 3.0}, 'temsil': 'kısmi',
+                'aciklama': 'Oktopamin reseptörlerini uyarır (oktopamin böceklerin adrenalini gibidir).'},
+    'imidakloprid': {'ad': 'İmidakloprid (böcek ilacı)', 'nt': {'acetylcholine': 1.5}, 'temsil': 'iyi',
+                     'aciklama': 'Neonikotinoid; asetilkolin reseptörlerini aşırı uyarır.'},
+    'fipronil': {'ad': 'Fipronil (böcek ilacı)', 'nt': {'gaba': 0.1}, 'temsil': 'iyi',
+                 'aciklama': 'GABA kanallarını bloke eder; beynin freni kalkar, nöbet benzeri aşırı ateşleme.'},
+    'pikrotoksin': {'ad': 'Pikrotoksin', 'nt': {'gaba': 0.0}, 'temsil': 'iyi',
+                    'aciklama': 'GABA-A kanal blokörü; laboratuvarda freni tamamen kaldırmak için kullanılır.'},
+    'ivermektin': {'ad': 'İvermektin', 'nt': {'glutamate': 2.0}, 'temsil': 'iyi',
+                   'aciklama': 'Böceklerdeki glutamat-kapılı klorür kanallarını açar; glutamat freni artar, felç.'},
+    'diazepam': {'ad': 'Diazepam', 'nt': {'gaba': 1.8}, 'temsil': 'zayıf',
+                 'aciklama': 'İnsanda GABA güçlendirici; böcek GABA reseptörleri buna az duyarlıdır, kaba yaklaşım.'},
 }
 
 # Davranış göstergeleri: kararı okuduğumuz çıkış nöronları
@@ -71,6 +101,7 @@ DAVRANISLAR = [
     {'id': 'geri',   'ad': 'Geri yürüme',          'spec': ['type:MDN'],    'not': 'Moonwalker (MDN)'},
     {'id': 'sol',    'ad': 'Sola dönme',           'spec': ['type:DNa02@L'], 'not': 'DNa02 sol'},
     {'id': 'sag',    'ad': 'Sağa dönme',           'spec': ['type:DNa02@R'], 'not': 'DNa02 sağ'},
+    {'id': 'ucus',   'ad': 'Uçuş (kanat gücü)',    'spec': ['prefix:DNg02_'], 'not': 'DNg02 grubu'},
 ]
 
 SUPER_AD = {
@@ -113,6 +144,9 @@ class Beyin:
     def idx(self, specs):
         out = []
         for s in specs:
+            if s.startswith('prefix:'):          # ör. prefix:DNg02_ -> DNg02_a ... DNg02_h
+                out += list(np.where(np.char.startswith(self.ctype.astype(str), s[7:]))[0])
+                continue
             out += [self.id2idx[f] for f in resolve(s) if f in self.id2idx]
         return np.unique(np.array(out, dtype=np.int64))
 
