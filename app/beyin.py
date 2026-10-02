@@ -8,6 +8,7 @@ nöron grubu çözümleyicisini kullanır; üstüne şunları ekler:
   * ilerleme bildirimi (arayüzdeki çubuk için)
 """
 
+import base64
 import os
 import sys
 import time
@@ -114,6 +115,30 @@ ILAC_HAZIR = {
                         'yavaş etkisini değil, genel GABA frenini güçlendirir.'},
 }
 
+# ---------------------------------------------------------------- canlı beyin modu
+# Orijinal model uyaran yokken tamamen sessizdir. Canlı modda:
+#   * her nörona küçük rastgele zar gerilimi gürültüsü (sinaptik gürültü; OU süreci)
+#   * ateşleme sıklığı uyumu (spike-frequency adaptation): her spike sonrası nöron
+#     geçici olarak zor ateşlenir -> gürültü tüm beyni kontrolsüz ateşe çevirmez
+# Değerler ayar taramasıyla seçildi: σ=2.5 mV, ΔA=2 mV, τA=300 ms ile
+#   boş beyin ~2 Hz yeme, şeker ~22 Hz, şeker+acı ~2 Hz (klasik sonucun yönü korunuyor).
+CANLILIK = {'dusuk': 2.3, 'normal': 2.5, 'yuksek': 2.7}   # gürültü σ [mV]
+UYUM_DA = 2.0       # her spike sonrası uyum artışı [mV]
+UYUM_TAU = 0.3      # uyum sönüm süresi [s]
+
+# Yavaş düzenleyiciler (dopamin, serotonin, oktopamin) hızlı sinaps gibi değil,
+# hedef nöronların uyarılabilirliğini (dinlenme gerilimini) kaydırarak etki eder.
+# İşaret: dopamin ve oktopamin uyarılmayı artırır (sineklerde uyanıklık/hareket),
+# serotonin genel olarak azaltır (sineklerde hareketi azaltır, uykuyu artırır).
+# Canlı modda uyaran yokken ölçülen kendiliğinden ateşleme (1 sn, normal canlılık, 5 tohum ortalaması).
+# Bağlantı haritasındaki sağ/sol farkı yüzünden sol dönüş nöronu biraz fazla ateşliyor;
+# arayüz dönüşü bu tabana göre hesaplar ki sinek durduk yere hep sola dönmesin.
+TABAN_SPIKE = 362000   # aynı koşulda toplam beyin ateşlemesi [spike/sn]
+TABAN = {'yeme': 10.2, 'kacis': 0.8, 'ileri': 0.6, 'geri': 0.8, 'sol': 24.4, 'sag': 12.4, 'ucus': 0.6}
+
+MODULATOR = {'dopamine': +1, 'octopamine': +1, 'serotonin': -1}
+MOD_KAPPA = 2.5     # tam etkide en fazla kayma [mV] (eşik farkı 7 mV)
+
 # Davranış göstergeleri: kararı okuduğumuz çıkış nöronları
 DAVRANISLAR = [
     {'id': 'yeme',   'ad': 'Yeme (hortum uzatma)', 'spec': ['mn9'],         'not': 'MN9 motor nöronu'},
@@ -159,6 +184,15 @@ class Beyin:
         self.row_len = np.diff(self.w.indptr)
 
         self._types = sorted({t for t in self.ctype if t})
+
+        # her nöronun her düzenleyiciden aldığı toplam sinaps gücü (0-1 normalize)
+        wt = abs(self.w).tocsc()
+        self.mod_girdi = {}
+        for nt in MODULATOR:
+            src = (self.nt == nt).astype(np.float32)
+            S = np.asarray(wt.T @ src).ravel()          # Σ_i |w_ij|, i: o NT'yi kullanan
+            s0 = np.median(S[S > 0]) if (S > 0).any() else 1.0
+            self.mod_girdi[nt] = (S / (S + s0)).astype(np.float32)
         log(f'Hazır ({time.time() - t0:.0f} sn)')
 
     # ------------------------------------------------------------ yardımcılar
@@ -195,15 +229,20 @@ class Beyin:
 
     # ------------------------------------------------------------ simülasyon
     def calistir(self, duyular=None, nt_olcek=None, lezyon=None, sure=0.5, seed=None,
-                 ilerleme=None):
+                 ilerleme=None, canli=None):
         """duyular: {anahtar: hz}; nt_olcek: {nt: çarpan}; lezyon: [spec]; sure: sn."""
         t_start = time.time()
         w = self.w.copy()
 
         # ilaç: presinaptik nöronun NT'sine göre giden ağırlıkları ölçekle
         row_scale = np.ones(self.n, dtype=np.float32)
+        bias = np.zeros(self.n, dtype=np.float32)       # yavaş düzenleme: dinlenme kayması
         for nt, k in (nt_olcek or {}).items():
-            if nt in NT_LISTESI and float(k) != 1.0:
+            if nt in MODULATOR:
+                if float(k) != 1.0:
+                    kayma = MOD_KAPPA * MODULATOR[nt] * np.clip(float(k) - 1.0, -1.0, 2.0) / 2.0
+                    bias += kayma * self.mod_girdi[nt]
+            elif nt in NT_LISTESI and float(k) != 1.0:
                 row_scale[self.nt == nt] = float(k)
         if not np.all(row_scale == 1.0):
             w.data *= np.repeat(row_scale, self.row_len)
@@ -222,11 +261,13 @@ class Beyin:
 
         n_steps = int(round(sure / DT))
         rng = np.random.default_rng(seed)
-        st, si = _run(w, stim, rng, n_steps, ilerleme)
+        sigma = CANLILIK.get(canli, 0.0) if canli else 0.0
+        st, si = _run(w, stim, rng, n_steps, ilerleme, sigma=sigma,
+                      uyum=UYUM_DA if canli else 0.0, bias=bias)
         sim_sn = time.time() - t_start
-        return self._ozet(st, si, n_steps, sure, sim_sn, stim, sus)
+        return self._ozet(st, si, n_steps, sure, sim_sn, stim, sus, canli)
 
-    def _ozet(self, st, si, n_steps, sure, sim_sn, stim, sus):
+    def _ozet(self, st, si, n_steps, sure, sim_sn, stim, sus, canli=None):
         n_bins = int(np.ceil(n_steps / BIN_STEPS))
         b = st // BIN_STEPS
         # kare başına ateşleyen nöronlar (tekil)
@@ -247,7 +288,8 @@ class Beyin:
             hz = float(rate[ix].mean()) if len(ix) else 0.0
             davranis.append({'id': d['id'], 'ad': d['ad'], 'not': d['not'],
                              'hz': round(hz, 1), 'n': int(len(ix)),
-                             'idx': ix.astype(int).tolist()})
+                             'idx': ix.astype(int).tolist(),
+                             'taban': TABAN.get(d['id'], 0.0) if canli else 0.0})
         girdi = np.unique(np.concatenate([ix for ix, _ in stim])) if stim else np.zeros(0, int)
 
         bolgeler = []
@@ -280,12 +322,18 @@ class Beyin:
             'girdi_idx': girdi.astype(int).tolist(),
             'sus_idx': np.asarray(sus).astype(int).tolist(),
             'kare_ofset': offs.tolist(),
-            'kare_noron': si_s.astype(int).tolist(),
+            # çok spike olabildiği için ikili (Int32, base64) gönderilir
+            'kare_noron_b64': base64.b64encode(si_s.astype('<i4').tobytes()).decode('ascii'),
+            'canli': canli,
+            'taban_spike': TABAN_SPIKE if canli == 'normal' else None,
         }
 
 
-def _run(w, stim, rng, n_steps, ilerleme=None):
-    """sim.run_trial ile aynı model; süre ayarlı ve ilerleme bildirimli."""
+def _run(w, stim, rng, n_steps, ilerleme=None, sigma=0.0, uyum=0.0, bias=None):
+    """sim.run_trial ile aynı model; süre ayarlı ve ilerleme bildirimli.
+
+    sigma>0: zar gürültüsü (canlı mod), uyum>0: ateşleme uyumu, bias: dinlenme kayması [mV].
+    Üçü de sıfırken sonuç orijinal Shiu modeliyle birebir aynıdır."""
     n = w.shape[0]
     V_0, V_RST, V_TH = sim.V_0, sim.V_RST, sim.V_TH
     DLY, RFC = sim.DLY_STEPS, sim.RFC_STEPS
@@ -299,6 +347,10 @@ def _run(w, stim, rng, n_steps, ilerleme=None):
     c = np.float32(sim.TAU / (sim.TAU - sim.T_MBR)
                    * (np.exp(-DT / sim.TAU) - np.exp(-DT / sim.T_MBR)))
     w_poi = np.float32(sim.W_SYN * sim.F_POI)
+    nsd = np.float32(sigma * np.sqrt(1 - b * b))          # OU: durağan std = sigma
+    A = np.zeros(n, dtype=np.float32) if uyum else None
+    ad = np.float32(np.exp(-DT / UYUM_TAU))
+    v0 = (V_0 + bias).astype(np.float32) if bias is not None and np.any(bias) else None
 
     if stim:
         stim_idx = np.concatenate([ix for ix, _ in stim])
@@ -317,9 +369,20 @@ def _run(w, stim, rng, n_steps, ilerleme=None):
         active = rfc <= 0
         vm = v[active]
         gm = g[active]
-        v[active] = V_0 + (vm - V_0) * b + gm * c
+        if v0 is None and A is None and not sigma:
+            v[active] = V_0 + (vm - V_0) * b + gm * c
+        else:
+            rest = V_0 if v0 is None else v0[active]
+            if A is not None:
+                rest = rest - A[active]
+            nv = rest + (vm - rest) * b + gm * c
+            if sigma:
+                nv += rng.standard_normal(len(vm), dtype=np.float32) * nsd
+            v[active] = nv
         g[active] = gm * a
         rfc[~active] -= 1
+        if A is not None:
+            A *= ad
         if len(stim_idx):
             ev = rng.random(len(stim_idx)) < stim_p
             if ev.any():
@@ -333,6 +396,8 @@ def _run(w, stim, rng, n_steps, ilerleme=None):
             v[idx] = V_RST
             g[idx] = 0.0
             rfc[idx] = np.where(is_exc[idx], 0, RFC)
+            if A is not None:
+                A[idx] += uyum
         if ilerleme and t % 100 == 0:
             ilerleme(t / n_steps)
     if ilerleme:

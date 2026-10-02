@@ -140,7 +140,7 @@ td.nt{color:var(--dim);font-size:11px}
     <div class="minfo" id="minfo"></div>
     <h2>Nörotransmitter ayarı</h2>
     <div id="nts"></div>
-    <div class="hint">%100 normal. Bir tipi kısınca o tipi kullanan nöronların tüm çıkış sinapsları zayıflar.</div>
+    <div class="hint">%100 normal. GABA, glutamat, asetilkolin: o tipi kullanan nöronların sinapsları güçlenir/zayıflar. Dopamin, serotonin, oktopamin: yavaş düzenleyici; hedef nöronların ne kadar kolay ateşlediğini değiştirir (dopamin/oktopamin artırır, serotonin azaltır).</div>
 
     <h2>Lezyon (nöron susturma)</h2>
     <div class="inrow">
@@ -152,15 +152,27 @@ td.nt{color:var(--dim);font-size:11px}
     <div class="hint">Öneri: <span class="chip" data-les="CB0248">CB0248</span> şeker devresindeki GABA freni</div>
 
     <h2>Deney</h2>
+    <div class="opt">Canlı beyin
+      <select id="canli">
+        <option value="">Kapalı (klasik model)</option>
+        <option value="dusuk">Düşük</option>
+        <option value="normal" selected>Normal</option>
+        <option value="yuksek">Yüksek</option>
+      </select>
+    </div>
+    <div class="hint">Canlı modda beyin uyaran olmadan da çalışır (zar gürültüsü + ateşleme uyumu); maddeler bu çalışan beyni değiştirir. Kapalıyken orijinal Shiu 2024 modeli: uyaran yoksa beyin sessizdir.</div>
     <div class="opt">Süre
       <select id="dur">
         <option value="0.2">0,2 sn</option>
-        <option value="0.5" selected>0,5 sn</option>
-        <option value="1">1 sn</option>
+        <option value="0.5">0,5 sn</option>
+        <option value="1" selected>1 sn</option>
+        <option value="2">2 sn</option>
+        <option value="3">3 sn</option>
+        <option value="5">5 sn</option>
       </select>
       <label style="margin-left:auto;display:flex;align-items:center;gap:6px"><input type="checkbox" id="seed" checked> Sabit tohum</label>
     </div>
-    <div class="hint">Sabit tohum açıkken aynı koşul hep aynı sonucu verir; karşılaştırma için açık tut.</div>
+    <div class="hint">Sabit tohum açıkken aynı koşul hep aynı sonucu verir; karşılaştırma için açık tut. Canlı modda 1 sn simülasyon bilgisayarına göre ~15–40 sn hesaplanır.</div>
     <button class="run" id="run">▶ Simülasyonu çalıştır</button>
     <div class="prog"><i id="progbar"></i></div>
     <div class="msg" id="msg"></div>
@@ -381,7 +393,7 @@ function kosulTopla() {
   return { duyular, ilac, lezyon: S.les.map(t => 'type:' + t), sure: +$('#dur').value,
            maddeler: Object.keys(S.madde).filter(m => S.madde[m] > 0),
            dozlar: Object.fromEntries(Object.entries(S.madde).filter(([, d]) => d > 0)),
-           seed: $('#seed').checked ? 42 : null };
+           seed: $('#seed').checked ? 42 : null, canli: $('#canli').value || null };
 }
 
 async function calistir() {
@@ -403,6 +415,12 @@ async function calistir() {
       else if (s.durum === 'calisiyor') msg(`Hesaplanıyor %${p} · ${sn.toFixed(0)} sn` + (p > 3 ? ` · ~${Math.max(0, sn / p * (100 - p)).toFixed(0)} sn kaldı` : ''));
       if (s.durum === 'hata') throw new Error(s.hata);
       if (s.durum === 'bitti') {
+        if (s.sonuc.kare_noron_b64 !== undefined) {   // ikili spike listesini çöz
+          const bin = atob(s.sonuc.kare_noron_b64), u8 = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+          s.sonuc.kare_noron = new Int32Array(u8.buffer); delete s.sonuc.kare_noron_b64;
+        }
+        if (s.sonuc.sure > 1 && +$('#speed').value > 0.25) $('#speed').value = '0.25';
         s.sonuc._etiket = etiket(k);
         HIST.unshift(s.sonuc); sonucGoster(s.sonuc); drawHist();
         msg(`Bitti: ${s.sonuc.toplam_spike.toLocaleString('tr')} spike, ${s.sonuc.sim_sn} sn hesap.`);
@@ -419,6 +437,7 @@ function etiket(k) {
   if (k.maddeler && k.maddeler.length) p.push(k.maddeler.map(m => `${META.ilac_hazir[m].ad.split(' (')[0]} %${Math.round(k.dozlar[m] * 100)}`).join(' + '));
   else for (const [n, x] of Object.entries(k.ilac)) p.push(`${META.nt[n].split(' ')[0]} %${Math.round(x * 100)}`);
   for (const l of k.lezyon) p.push('−' + l.replace('type:', ''));
+  if (k.canli) p.push('canlı');
   return p.length ? p.join(' · ') : 'Uyaran yok (sessiz beyin)';
 }
 
@@ -456,13 +475,20 @@ function sonucGoster(r) {
 }
 
 function karar(r) {
-  const h = Object.fromEntries(r.davranis.map(d => [d.id, d.hz]));
-  const ana = r.davranis.filter(d => !['sol', 'sag'].includes(d.id)).sort((a, b) => b.hz - a.hz)[0];
+  // canlı modda kendiliğinden ateşleme (taban) düşülür
+  const net = d => d.hz - (d.taban || 0);
+  const h = Object.fromEntries(r.davranis.map(d => [d.id, net(d)]));
+  const ana = r.davranis.filter(d => !['sol', 'sag'].includes(d.id)).sort((a, b) => net(b) - net(a))[0];
   const parts = [];
-  if (ana && ana.hz >= 10) parts.push(`Sinek: <b>${ana.ad.split(' (')[0].toUpperCase()}</b> eğiliminde (${ana.hz.toFixed(0)} Hz)`);
+  if (ana && net(ana) >= 8) parts.push(`Sinek: <b>${ana.ad.split(' (')[0].toUpperCase()}</b> eğiliminde (${ana.hz.toFixed(0)} Hz${ana.taban ? `, taban ${ana.taban}` : ''})`);
   const d = h.sol - h.sag;
   if (Math.abs(d) >= 10) parts.push(`${d > 0 ? 'sola' : 'sağa'} dönme sinyali`);
-  if (!parts.length) return r.toplam_spike ? 'Belirgin bir davranış komutu çıkmadı.' : 'Beyin sessiz: hiç ateşleme yok.';
+  if (r.taban_spike) {   // genel beyin aktivitesi: uyuşukluk / aşırı uyarılma
+    const oran = r.toplam_spike / r.sure / r.taban_spike;
+    if (oran < 0.85) parts.push(`<b>UYUŞUK</b>: beyin aktivitesi %${Math.round((1 - oran) * 100)} düşük`);
+    else if (oran > 1.12) parts.push(`<b>AŞIRI UYARILMIŞ</b>: beyin aktivitesi %${Math.round((oran - 1) * 100)} yüksek`);
+  }
+  if (!parts.length) return r.toplam_spike ? (r.canli ? 'Sinek kendi halinde: belirgin bir davranış değişikliği yok.' : 'Belirgin bir davranış komutu çıkmadı.') : 'Beyin sessiz: hiç ateşleme yok.';
   return parts.join(' · ');
 }
 
@@ -685,14 +711,14 @@ const fly = (() => {
     const cnt = res.davranis.map(() => new Float32Array(F));
     const o = res.kare_ofset, ns = res.kare_noron;
     for (let f = 0; f < F; f++) for (let k = o[f]; k < o[f + 1]; k++) { const m = map[ns[k]]; if (m >= 0) cnt[m][f]++; }
-    const W = Math.max(1, Math.round(40 / res.bin_ms)); // 40 ms kayan pencere
+    const W = Math.max(1, Math.round((res.canli ? 150 : 40) / res.bin_ms)); // kayan pencere (canlıda gürültüye karşı daha uzun)
     seri = {}; seriHz = {};
     res.davranis.forEach((d, k) => {
       const a = new Float32Array(F), ah = new Float32Array(F), c = cnt[k], n = Math.max(1, d.n);
       let sum = 0;
       for (let f = 0; f < F; f++) {
         sum += c[f]; if (f >= W) sum -= c[f - W];
-        const hz = sum / n / (Math.min(f + 1, W) * res.bin_ms / 1000);
+        const hz = Math.max(0, sum / n / (W * res.bin_ms / 1000) - (d.taban || 0));   // ilk karelerde sahte patlama olmasın
         a[f] = Math.min(1, hz / ESIK[d.id]); ah[f] = hz;
       }
       seri[d.id] = a; seriHz[d.id] = ah;
@@ -719,9 +745,10 @@ const fly = (() => {
     kalkis *= Math.exp(-dt / 0.6);
     ucuyor = act.ucus > 0.2 || kalkis > 0.25;
     alt += ((ucuyor ? 1 : 0) - alt) * Math.min(1, dt * (ucuyor ? 6 : 3));
-    const vy = cl((hz('ileri') - hz('geri')) / 80) * 110;   // yürüme hızı, birim / sim-sn
+    const bw = r.canli ? 20 : 80, bt = r.canli ? 40 : 80;   // canlı modda taban üstü küçük farklar da harekete döner
+    const vy = cl((hz('ileri') - hz('geri')) / bw) * 110;   // yürüme hızı, birim / sim-sn
     const v = vy + alt * 130;                                // uçarken ileri süzülme
-    const om = cl((hz('sag') - hz('sol')) / 80) * 4.5;      // rad / sim-sn (+ = sağa)
+    const om = cl((hz('sag') - hz('sol')) / bt) * 4.5;      // rad / sim-sn (+ = sağa)
     th += om * dt;
     x += Math.sin(th) * v * dt; y += Math.cos(th) * v * dt;
     leg += (Math.abs(v) * 0.09 + Math.abs(om) * 1.4) * dt;

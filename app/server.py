@@ -54,7 +54,8 @@ def is_calistir(is_id, kosul):
                 duyular=kosul.get('duyular', {}),
                 nt_olcek=kosul.get('ilac', {}),
                 lezyon=kosul.get('lezyon', []),
-                sure=min(max(float(kosul.get('sure', 0.5)), 0.05), 2.0),
+                sure=min(max(float(kosul.get('sure', 0.5)), 0.05), 5.0),
+                canli=kosul.get('canli') or None,
                 seed=kosul.get('seed'),
                 ilerleme=ilerleme,
             )
@@ -65,7 +66,7 @@ def is_calistir(is_id, kosul):
             j['durum'] = 'bitti'
             try:
                 SONUC_DIR.mkdir(parents=True, exist_ok=True)
-                ozet = {k: v for k, v in sonuc.items() if k not in ('kare_noron', 'kare_ofset')}
+                ozet = {k: v for k, v in sonuc.items() if k not in ('kare_noron_b64', 'kare_ofset')}
                 (SONUC_DIR / f'{time.strftime("%Y%m%d-%H%M%S")}_{is_id}.json').write_text(
                     json.dumps(ozet, ensure_ascii=False, indent=1), encoding='utf-8')
             except OSError as e:
