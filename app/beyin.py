@@ -58,39 +58,60 @@ NT_LISTESI = {
 }
 # Maddeler: nörotransmitter tipine göre ağırlık çarpanı (+ ağızdan alınınca tadı).
 # 'temsil': bu modelin o maddeyi ne kadar iyi taklit edebildiği (dürüstlük notu).
+MADDE_KATEGORI = {'gundelik': 'Gündelik', 'uyusturucu': 'Uyuşturucu', 'ilac': 'İlaç', 'bocek': 'Böcek ilacı / araştırma'}
 ILAC_HAZIR = {
-    'kafein': {'ad': 'Kafein', 'nt': {'dopamine': 1.5}, 'duyular': {'aci': 60}, 'temsil': 'kısmi',
+    'kafein': {'kat': 'gundelik', 'ad': 'Kafein', 'nt': {'dopamine': 1.5}, 'duyular': {'aci': 60}, 'temsil': 'kısmi',
                'aciklama': 'Adenozin reseptörlerini bloke eder; sineklerde uyanıklığı dopamin sinyalini '
                            'artırarak sağlar. Tadı acıdır: ağızdan alınınca acı tat nöronları da uyarılır.'},
-    'nikotin': {'ad': 'Nikotin', 'nt': {'acetylcholine': 1.6}, 'duyular': {'aci': 40}, 'temsil': 'iyi',
+    'nikotin': {'kat': 'gundelik', 'ad': 'Nikotin', 'nt': {'acetylcholine': 1.6}, 'duyular': {'aci': 40}, 'temsil': 'iyi',
                 'aciklama': 'Nikotinik asetilkolin reseptörlerini uyarır; bitkinin doğal böcek ilacıdır. '
                             'Yüksek dozda aşırı uyarım ve felç.'},
-    'alkol': {'ad': 'Alkol (etanol)', 'nt': {'gaba': 1.6, 'acetylcholine': 0.8}, 'temsil': 'kısmi',
+    'alkol': {'kat': 'gundelik', 'ad': 'Alkol (etanol)', 'nt': {'gaba': 1.6, 'acetylcholine': 0.8}, 'temsil': 'kısmi',
               'aciklama': 'GABA frenini güçlendirir, uyarıcı iletimi zayıflatır. Sinekler önce hareketlenir, '
                           'sonra koordinasyonu bozulup sızar.'},
-    'thc': {'ad': 'THC (esrar)', 'nt': {}, 'temsil': 'hedef yok',
+    'thc': {'kat': 'uyusturucu', 'ad': 'THC (esrar)', 'nt': {}, 'temsil': 'hedef yok',
             'aciklama': 'Böceklerde kannabinoid reseptörü (CB1/CB2) yoktur, yani THC\'nin sinek beyninde '
                         'doğrudan hedefi bulunmaz. Modelde etkisizdir; sonuç ilaçsız deneyle aynı çıkmalı '
                         '(iyi bir kontrol deneyi).'},
-    'kokain': {'ad': 'Kokain', 'nt': {'dopamine': 1.8, 'serotonin': 1.4}, 'temsil': 'kısmi',
+    'kokain': {'kat': 'uyusturucu', 'ad': 'Kokain', 'nt': {'dopamine': 1.8, 'serotonin': 1.4}, 'temsil': 'kısmi',
                'aciklama': 'Dopamin ve serotonin geri alımını engeller. Sineklerde aşırı hareketlilik, '
                            'dönme ve titreme görülür.'},
-    'amfetamin': {'ad': 'Amfetamin', 'nt': {'dopamine': 2.2, 'octopamine': 1.5}, 'temsil': 'kısmi',
+    'amfetamin': {'kat': 'uyusturucu', 'ad': 'Amfetamin', 'nt': {'dopamine': 2.2, 'octopamine': 1.5}, 'temsil': 'kısmi',
                   'aciklama': 'Dopamin (böceklerde oktopamin de) salınımını artırır; uyarıcı.'},
-    'fluoksetin': {'ad': 'Fluoksetin (Prozac)', 'nt': {'serotonin': 1.8}, 'temsil': 'kısmi',
+    'fluoksetin': {'kat': 'ilac', 'ad': 'Fluoksetin (Prozac)', 'nt': {'serotonin': 1.8}, 'temsil': 'kısmi',
                    'aciklama': 'Serotonin geri alımını engeller; serotonin sinyali uzar ve güçlenir.'},
-    'amitraz': {'ad': 'Amitraz (tarım ilacı)', 'nt': {'octopamine': 3.0}, 'temsil': 'kısmi',
+    'amitraz': {'kat': 'bocek', 'ad': 'Amitraz (tarım ilacı)', 'nt': {'octopamine': 3.0}, 'temsil': 'kısmi',
                 'aciklama': 'Oktopamin reseptörlerini uyarır (oktopamin böceklerin adrenalini gibidir).'},
-    'imidakloprid': {'ad': 'İmidakloprid (böcek ilacı)', 'nt': {'acetylcholine': 1.5}, 'temsil': 'iyi',
+    'imidakloprid': {'kat': 'bocek', 'ad': 'İmidakloprid (böcek ilacı)', 'nt': {'acetylcholine': 1.5}, 'temsil': 'iyi',
                      'aciklama': 'Neonikotinoid; asetilkolin reseptörlerini aşırı uyarır.'},
-    'fipronil': {'ad': 'Fipronil (böcek ilacı)', 'nt': {'gaba': 0.1}, 'temsil': 'iyi',
+    'fipronil': {'kat': 'bocek', 'ad': 'Fipronil (böcek ilacı)', 'nt': {'gaba': 0.1}, 'temsil': 'iyi',
                  'aciklama': 'GABA kanallarını bloke eder; beynin freni kalkar, nöbet benzeri aşırı ateşleme.'},
-    'pikrotoksin': {'ad': 'Pikrotoksin', 'nt': {'gaba': 0.0}, 'temsil': 'iyi',
+    'pikrotoksin': {'kat': 'bocek', 'ad': 'Pikrotoksin', 'nt': {'gaba': 0.0}, 'temsil': 'iyi',
                     'aciklama': 'GABA-A kanal blokörü; laboratuvarda freni tamamen kaldırmak için kullanılır.'},
-    'ivermektin': {'ad': 'İvermektin', 'nt': {'glutamate': 2.0}, 'temsil': 'iyi',
+    'ivermektin': {'kat': 'bocek', 'ad': 'İvermektin', 'nt': {'glutamate': 2.0}, 'temsil': 'iyi',
                    'aciklama': 'Böceklerdeki glutamat-kapılı klorür kanallarını açar; glutamat freni artar, felç.'},
-    'diazepam': {'ad': 'Diazepam', 'nt': {'gaba': 1.8}, 'temsil': 'zayıf',
+    'diazepam': {'kat': 'ilac', 'ad': 'Diazepam', 'nt': {'gaba': 1.8}, 'temsil': 'zayıf',
                  'aciklama': 'İnsanda GABA güçlendirici; böcek GABA reseptörleri buna az duyarlıdır, kaba yaklaşım.'},
+    'metamfetamin': {'kat': 'uyusturucu', 'ad': 'Metamfetamin', 'nt': {'dopamine': 2.5, 'octopamine': 1.8}, 'temsil': 'kısmi',
+                     'aciklama': 'Dopamin taşıyıcısını tersine çalıştırıp büyük miktarda dopamin salınımına yol açar; '
+                                 'sineklerde aşırı hareketlilik, uykusuzluk ve tekrarlayan hareketler görülür.'},
+    'mdma': {'kat': 'uyusturucu', 'ad': 'MDMA (ecstasy)', 'nt': {'serotonin': 2.5, 'dopamine': 1.4}, 'temsil': 'kısmi',
+             'aciklama': 'Serotonin taşıyıcısı (SERT) üzerinden yoğun serotonin salınımı, daha az dopamin. '
+                         'Sineğin serotonin taşıyıcısı da MDMA\'ya duyarlıdır.'},
+    'lsd': {'kat': 'uyusturucu', 'ad': 'LSD', 'nt': {'serotonin': 1.8}, 'temsil': 'zayıf',
+            'aciklama': '5-HT2 serotonin reseptörlerini uyarır; sineklerde de 5-HT2 reseptörü var ve görsel davranışı '
+                        'etkiler. Model reseptör alt tiplerini ayırt edemez, sadece serotonin iletimini güçlendirir.'},
+    'psilosibin': {'kat': 'uyusturucu', 'ad': 'Psilosibin (mantar)', 'nt': {'serotonin': 1.6}, 'temsil': 'zayıf',
+                   'aciklama': 'Vücutta psilosine dönüşür, LSD gibi 5-HT2 reseptörlerini uyarır. Aynı sınırlama geçerli.'},
+    'morfin': {'kat': 'uyusturucu', 'ad': 'Morfin / eroin (opioid)', 'nt': {}, 'temsil': 'hedef yok',
+               'aciklama': 'Sineklerde opioid reseptörü (mu, delta, kappa) bulunmaz; opioidlerin sinek beyninde '
+                           'doğrudan hedefi yoktur. Modelde etkisiz — THC gibi kontrol deneyi olarak kullanılabilir.'},
+    'ketamin': {'kat': 'uyusturucu', 'ad': 'Ketamin', 'nt': {}, 'temsil': 'temsil edilemiyor',
+                'aciklama': 'Uyarıcı NMDA-glutamat reseptörlerini bloke eder. Bu modelde glutamat yalnızca frenleyici '
+                            '(GluCl) olarak tanımlı, uyarıcı NMDA yolu yok; bu yüzden etkisi taklit edilemez.'},
+    'ghb': {'kat': 'uyusturucu', 'ad': 'GHB', 'nt': {'gaba': 1.7}, 'temsil': 'kısmi',
+            'aciklama': 'GABA-B reseptörlerini uyarır; baskılayıcı, yüksek dozda bilinç kaybı. Model GABA-B\'nin '
+                        'yavaş etkisini değil, genel GABA frenini güçlendirir.'},
 }
 
 # Davranış göstergeleri: kararı okuduğumuz çıkış nöronları

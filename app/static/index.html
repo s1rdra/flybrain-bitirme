@@ -42,6 +42,13 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
 .chip{border:1px solid var(--line);background:var(--panel2);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer}
 .chip:hover{border-color:var(--muted)}
 .chip.on{border-color:var(--accent);color:var(--accent);background:rgba(102,255,158,.08)}
+.tabs{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+.tabs .tab{border:1px solid var(--line);border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--muted);background:var(--panel2)}
+.tabs .tab:hover{border-color:var(--muted)}
+.tabs .tab.sel{border-color:var(--accent);color:var(--accent)}
+.tabs .tab i{font-style:normal;color:var(--warn);margin-left:4px}
+.mgrp{display:none}
+.mgrp.sel{display:block}
 .madde label{color:var(--muted)}
 .madde.chg label{color:var(--text)}
 .madde.chg .v{color:var(--warn)}
@@ -127,6 +134,7 @@ td.nt{color:var(--dim);font-size:11px}
     <div id="senses"></div>
 
     <h2>Maddeler <span class="x" id="resetDrug">sıfırla</span></h2>
+    <div class="tabs" id="mtabs"></div>
     <div id="drugPresets"></div>
     <div class="hint">0 = yok · %100 = standart doz · %300 = aşırı doz. Birden fazla madde birlikte verilebilir; isme gelince açıklaması çıkar.</div>
     <div class="minfo" id="minfo"></div>
@@ -313,6 +321,23 @@ function arayuzKur() {
   };
   const resetDrug = () => { document.querySelectorAll('#drugPresets .row').forEach(r => r._set(0)); S.madde = {}; maddeUygula(); };
   $('#resetDrug').onclick = resetDrug;
+  // sekmeler: Gündelik / Uyuşturucu / İlaç / Böcek ilacı
+  const grp = {}, tab = {};
+  const sekme = kat => {
+    for (const c of Object.keys(grp)) { grp[c].classList.toggle('sel', c === kat); tab[c].classList.toggle('sel', c === kat); }
+  };
+  for (const [kat, ad] of Object.entries(META.madde_kat)) {
+    grp[kat] = el('div', { class: 'mgrp' }); $('#drugPresets').append(grp[kat]);
+    tab[kat] = el('span', { class: 'tab', onclick: () => sekme(kat) }, ad, el('i'));
+    $('#mtabs').append(tab[kat]);
+  }
+  const sayac = () => {
+    for (const kat of Object.keys(grp)) {
+      const n = Object.entries(S.madde).filter(([m, d]) => d > 0 && META.ilac_hazir[m].kat === kat).length;
+      tab[kat].querySelector('i').textContent = n ? n : '';
+    }
+  };
+  sekme('gundelik');
   for (const [k, p] of Object.entries(META.ilac_hazir)) {
     const rg = el('input', { type: 'range', min: 0, max: 300, step: 10, value: 0 });
     const v = el('span', { class: 'v' }, '0');
@@ -321,9 +346,9 @@ function arayuzKur() {
       const d = +rg.value; v.textContent = d ? '%' + d : '0';
       row.classList.toggle('chg', d > 0); S.madde[k] = d / 100;
     };
-    rg.oninput = () => { upd(); maddeUygula(); };
-    row._set = d => { rg.value = d; upd(); };
-    $('#drugPresets').append(row);
+    rg.oninput = () => { upd(); maddeUygula(); sayac(); };
+    row._set = d => { rg.value = d; upd(); sayac(); };
+    (grp[p.kat] || grp.ilac).append(row);
   }
 
   // lezyon

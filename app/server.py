@@ -100,7 +100,7 @@ class Handler(BaseHTTPRequestHandler):
             if not durum['hazir']:
                 return self._send(503, durum)
             return self._send(200, {
-                'duyular': B.DUYULAR, 'nt': B.NT_LISTESI, 'ilac_hazir': B.ILAC_HAZIR,
+                'duyular': B.DUYULAR, 'nt': B.NT_LISTESI, 'ilac_hazir': B.ILAC_HAZIR, 'madde_kat': B.MADDE_KATEGORI,
                 'davranislar': B.DAVRANISLAR, 'bolge_ad': [B.SUPER_AD[s] for s in B.SUPER_SIRA],
                 'n': beyin.n, 'tipler': beyin.tipler(),
             })
