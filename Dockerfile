@@ -29,6 +29,9 @@ RUN sed -i "s#flywire_annotations/main/#flywire_annotations/${ANNOTATIONS_COMMIT
 # Connectome verisi (~120 MB) imajın içine bir kere indirilir
 RUN python scripts/get_data.py
 
+# Bizim kodumuz (compose ile çalışınca ./app klasörü bunun üstüne bağlanır)
+COPY app /opt/app
+
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 

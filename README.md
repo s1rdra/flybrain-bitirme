@@ -33,8 +33,14 @@ Beklenen çıktı: `MN9 rate: ~80 Hz` → sanal sinek şekeri tattı ve hortumun
 docker compose up
 ```
 
-Tarayıcıdan aç: **http://localhost:8000** (durdurmak için `Ctrl+C`).
-Şimdilik kaynak projenin hazır arayüzü geliyor; kendi beyin şemalı arayüzümüz `app/` altında yazılacak.
+Terminalde "Arayüz hazır" yazınca tarayıcıdan aç: **http://localhost:8000** (durdurmak için `Ctrl+C`).
+
+- **Sol panel:** duyular (tat, koku, görme, sıcaklık, ses...), "ilaçlar" (nörotransmitter kaydırıcıları + hazır ilaçlar), lezyon (hücre tipi susturma), süre
+- **Orta:** 106 bin nöronluk beyin haritası; ateşleyen nöronlar canlı yanar. Sürükle = döndür, tekerlek = yakınlaştır
+- **Sağ panel:** sineğin kararı (yeme, kaçış, yürüme, dönme), bölge aktivitesi, en aktif hücre tipleri, deney geçmişi
+- Her deneyin özeti `results/arayuz/` klasörüne JSON olarak kaydedilir
+
+Kaynak projenin eski (Japonca) sayfası için: `docker compose run --rm -p 8000:8000 flybrain eski`
 
 ## 4. Deney komutları
 

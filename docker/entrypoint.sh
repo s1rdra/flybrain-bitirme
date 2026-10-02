@@ -4,11 +4,12 @@ cd /opt/flybrain
 
 case "$1" in
   gui)
-    # Şimdilik kaynak projenin hazır arayüzü; kendi arayüzümüz app/ altında gelecek
-    echo ""
-    echo "  Arayüz hazır  ->  http://localhost:8000"
-    echo "  Robot sayfası ->  http://localhost:8000/robot.html"
-    echo ""
+    # Bizim arayüzümüz: beyin şeması + koşul paneli
+    exec python /opt/app/server.py
+    ;;
+  eski)
+    # Kaynak projenin hazır (Japonca) sayfası
+    echo "  Eski arayüz -> http://localhost:8000"
     exec python -m http.server 8000 --directory docs
     ;;
   test)
