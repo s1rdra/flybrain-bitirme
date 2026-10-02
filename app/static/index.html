@@ -258,12 +258,12 @@ function arayuzKur() {
       v.textContent = rg.value + ' Hz'; row.className = 'row ' + (cb.checked ? 'on' : 'off');
     };
     cb.onchange = upd;
-    rg.oninput = () => { if (!cb.checked) cb.checked = true; upd(); };
+    rg.oninput = () => { cb.checked = +rg.value > 0; upd(); };
     row._set = (on, hz) => { cb.checked = on; if (hz != null) rg.value = hz; upd(); };
     S.sense[k].row = row;
     box.append(row);
   }
-  $('#resetSense').onclick = () => Object.values(S.sense).forEach(s => s.row._set(false));
+  $('#resetSense').onclick = () => Object.values(S.sense).forEach(s => s.row._set(false, 0));
   S.sense.seker.row._set(true);
 
   // ilaçlar
