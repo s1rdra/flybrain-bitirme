@@ -794,8 +794,10 @@ const fly = (() => {
     requestAnimationFrame(loop);
   }
 
+  // büyük pencerede çözünürlüğü sınırla: retina ekranda bile akıcı kalsın
+  const flyDpr = () => Math.min(window.devicePixelRatio || 1, $('#flybox').classList.contains('big') ? 1.25 : 2);
   function boyut() {   // tuvali ekran çözünürlüğüne eşitle (büyük modda detay için)
-    const rc = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    const rc = cv.getBoundingClientRect(), d = flyDpr();
     if (!rc.width) return;
     cv.width = Math.round(rc.width * d); cv.height = Math.round(rc.width * d * VH / VW);
     OLCEK = cv.width / VW;
@@ -920,27 +922,13 @@ const fly = (() => {
     arr.push(p[0], p[1]);
   }
   // Noktalar doğrudan piksel tamponuna toplanarak yazılır (fillRect'ten çok daha hızlı).
-  let tampon = null, arkaPlan = null, arkaAnahtar = '';
-  function arkaPlanHazirla() {   // gökyüzü/zemin gradyanı: boyut değişince bir kez çizilip saklanır
-    const key = cv.width + 'x' + cv.height + (world ? 'w' : '');
-    if (key === arkaAnahtar && arkaPlan) return;
-    ctx.setTransform(cv.width / VW, 0, 0, cv.height / VH, 0, 0);
-    ctx.globalCompositeOperation = 'source-over';
-    if (world) {
-      const gr = ctx.createLinearGradient(0, 0, 0, VH);
-      gr.addColorStop(0, '#0d1826'); gr.addColorStop(0.35, '#0c1620'); gr.addColorStop(1, '#0a1610');
-      ctx.fillStyle = gr; ctx.fillRect(0, 0, VW, VH);
-      const sg = ctx.createRadialGradient(VW * 0.85, 10, 2, VW * 0.85, 10, 90);
-      sg.addColorStop(0, 'rgba(255,235,170,.22)'); sg.addColorStop(1, 'rgba(255,235,170,0)');
-      ctx.fillStyle = sg; ctx.fillRect(0, 0, VW, VH);
-    } else { ctx.fillStyle = '#0b1118'; ctx.fillRect(0, 0, VW, VH); }
-    arkaPlan = ctx.getImageData(0, 0, cv.width, cv.height);
-    tampon = ctx.createImageData(cv.width, cv.height);
-    arkaAnahtar = key;
+  let tampon = null;
+  function arkaPlanHazirla() {
+    if (!tampon || tampon.width !== cv.width || tampon.height !== cv.height) tampon = ctx.createImageData(cv.width, cv.height);
   }
   function bosalt() {
-    const d = window.devicePixelRatio || 1, W2 = cv.width, H2 = cv.height, buf = tampon.data;
-    buf.set(arkaPlan.data);
+    const d = flyDpr(), W2 = cv.width, H2 = cv.height, buf = tampon.data;
+    buf.fill(0);
     const af = Math.max(0.42, Math.min(1, Math.sqrt(OLCEK / d / 4.5)));   // küçük pencerede nokta yoğunluğu parlamasın
     for (const [key, arr] of KOVA) {
       if (!arr.length) continue;
@@ -953,13 +941,28 @@ const fly = (() => {
         if (px < 0 || py < 0 || px + sz > W2 || py + sz > H2) continue;
         for (let yy = 0; yy < sz; yy++) {
           let o = ((py + yy) * W2 + px) * 4;
-          for (let xx = 0; xx < sz; xx++, o += 4) { buf[o] += R0; buf[o + 1] += G0; buf[o + 2] += B0; }
+          for (let xx = 0; xx < sz; xx++, o += 4) { buf[o] += R0; buf[o + 1] += G0; buf[o + 2] += B0; buf[o + 3] = 255; }
         }
       }
       arr.length = 0;
     }
     ctx.putImageData(tampon, 0, 0);
     ctx.setTransform(W2 / VW, 0, 0, H2 / VH, 0, 0);
+    // noktaların ARKASINA: dolgular, zemin, gökyüzü
+    ctx.globalCompositeOperation = 'destination-over';
+    dolgulariCiz();
+    if (world) {
+      const gr = ctx.createLinearGradient(0, 0, 0, VH);
+      gr.addColorStop(0, '#16263a'); gr.addColorStop(0.5, '#10202c'); gr.addColorStop(1, '#0d1a14');
+      ctx.fillStyle = gr;
+    } else ctx.fillStyle = '#0b1118';
+    ctx.fillRect(0, 0, VW, VH);
+    ctx.globalCompositeOperation = 'source-over';
+    if (world) {   // güneş parıltısı (üstte, hafif)
+      const sg = ctx.createRadialGradient(VW * 0.85, 10, 2, VW * 0.85, 10, 90);
+      sg.addColorStop(0, 'rgba(255,235,170,.18)'); sg.addColorStop(1, 'rgba(255,235,170,0)');
+      ctx.fillStyle = sg; ctx.fillRect(0, 0, VW, VH);
+    }
   }
   function lyerel(a, b, n, rgb = YESIL, br = 1) {   // yerel iki nokta arası noktalı çizgi
     for (let i = 0; i <= n; i++) {
@@ -978,7 +981,8 @@ const fly = (() => {
   let world = null;                                // {W, pts:[[x,y,z,renk,b]], iz}
   function dunyaKur(W) {
     // nesneler gruplar halinde tutulur: ekrandaki görünürlüğe göre atlanabilsin (performans)
-    const objs = [];
+    const objs = [], dek = [];
+    W._dekor = dek;
     let pts = null;
     const yeni = (cx, cy, cz, rad) => { const o = { cx, cy, cz, rad, pts: [] }; objs.push(o); pts = o.pts; };
     const ga = Math.PI * (3 - Math.sqrt(5));
@@ -1080,11 +1084,13 @@ const fly = (() => {
       const X = Math.cos(t) * d * MM, Y = Math.sin(t) * d * MM, tac = (12 + rnd() * 8) * MM, H = (34 + rnd() * 16) * MM;
       yeni(X, Y, H * 0.6, tac * 1.3);
       agacCiz(X, Y, 3 * MM, H, tac, 0.45, [70, 180, 110]);
+      dek.push({ t: 'govde', x: X, y: Y, r: 3.3 * MM, h: H * 0.85, c: 'rgba(110,88,65,.7)' }, { t: 'daire', x: X, y: Y, z: H, r: tac * 0.95, c: [45, 125, 75], a: 0.5 });
     }
     // çalılar
     for (let i = 0; i < 9; i++) {
       let x0, y0, n = 0; do { x0 = (rnd() * 2 - 1) * (A - 8); y0 = (rnd() * 2 - 1) * (A - 8); n++; } while (doluMu(x0, y0, 7) && n < 40);
       yeni(x0 * MM, y0 * MM, 3 * MM, 8 * MM);
+      dek.push({ t: 'daire', x: x0 * MM, y: y0 * MM, z: 2.5 * MM, r: 4.5 * MM, c: [60, 160, 90], a: 0.6 });
       for (let k = 0; k < 5; k++) { const q = rnd() * 6.28, d = rnd() * 3.5 * MM, rr = (2.2 + rnd() * 1.8) * MM;
         kure(x0 * MM + Math.cos(q) * d, y0 * MM + Math.sin(q) * d, rr * 0.8, rr, rr, rr * 0.8, 70, k % 2 ? [70, 190, 110] : [110, 220, 140], 0.6, p => p[2] > -0.3); }
     }
@@ -1093,6 +1099,7 @@ const fly = (() => {
       let x0, y0, n = 0; do { x0 = (rnd() * 2 - 1) * (A - 5); y0 = (rnd() * 2 - 1) * (A - 5); n++; } while (doluMu(x0, y0, 3) && n < 40);
       const H = (2 + rnd() * 2) * MM, X = x0 * MM, Y = y0 * MM;
       yeni(X, Y, H * 0.5, H);
+      dek.push({ t: 'daire', x: X, y: Y, z: H, r: 2 * MM, c: [210, 110, 85], a: 0.8 });
       for (let h = 0; h < H; h += 6) for (let a = 0; a < 8; a++) { const q = a / 8 * 6.28; pts.push([X + Math.cos(q) * 7, Y + Math.sin(q) * 7, h, [235, 225, 210], 0.8]); }
       kure(X, Y, H, 2.2 * MM, 2.2 * MM, 1.2 * MM, 70, rnd() < 0.5 ? [255, 110, 90] : [220, 170, 120], 0.95, p => p[2] > -0.1);
     }
@@ -1107,7 +1114,7 @@ const fly = (() => {
           pts.push([x0 * MM + ex * Math.cos(t) - ey * Math.sin(t), y0 * MM + ex * Math.sin(t) + ey * Math.cos(t), 2, c, 0.75]); }
         hat([x0 * MM, y0 * MM, 2], [x0 * MM + Math.cos(t) * 1.6 * MM, y0 * MM + Math.sin(t) * 1.6 * MM, 2], 4, c, 0.6); }
     }
-    return { W, objs, iz: W.iz };
+    return { W, objs, iz: W.iz, dolgu: dolguListesi(W) };
   }
   // çimen: sineğin çevresindeki hücrelerde, rüzgârla sallanan noktalı otlar (konuma bağlı, sabit desen)
   const IZGARA = [70, 110, 130];
@@ -1135,6 +1142,72 @@ const fly = (() => {
         }
       }
     }
+  }
+  // ---- dolgular: noktaların arkasına yarı saydam hacimler (dünya daha "dolu" ve okunur görünsün)
+  function dolguListesi(W) {
+    const L = [];
+    for (const o of W.harita.nesneler) {
+      const X = o.x * MM, Y = o.y * MM, R = o.r * MM;
+      if (o.tip === 'agac') {
+        L.push({ t: 'govde', x: X, y: Y, r: R * 1.1, h: o.boy * MM * 0.85, c: 'rgba(125,98,72,.75)' });
+        L.push({ t: 'daire', x: X, y: Y, z: o.boy * MM, r: o.tac * MM * 0.95, c: [55, 150, 90], a: 0.55 });
+        L.push({ t: 'zemin', x: X, y: Y, r: o.tac * MM, c: 'rgba(5,15,10,.35)' });               // gölge
+      } else if (o.tip === 'meyve') {
+        L.push({ t: 'daire', x: X, y: Y, z: R * 0.9, r: R * (o.tur === 'muz' ? 1.3 : 1), c: o.tur === 'muz' ? [235, 195, 70] : [215, 55, 55], a: 0.85 });
+        L.push({ t: 'zemin', x: X, y: Y, r: 14 * MM, c: 'rgba(255,190,90,.07)' });               // koku alanı
+        L.push({ t: 'zemin', x: X, y: Y, r: 6 * MM, c: 'rgba(255,190,90,.08)' });
+      } else if (o.tip === 'cicek') {
+        const c = CICEK_RENK[o.renk] || CICEK_RENK.pembe;
+        L.push({ t: 'cizgi', x: X, y: Y, h: o.boy * MM, c: 'rgba(110,190,110,.8)', w: 5 });
+        L.push({ t: 'daire', x: X, y: Y, z: o.boy * MM, r: 40, c, a: 0.75 });
+        L.push({ t: 'zemin', x: X, y: Y, r: 14 * MM, c: 'rgba(190,140,255,.06)' });
+      } else if (o.tip === 'su') {
+        L.push({ t: 'zemin', x: X, y: Y, r: R, c: 'rgba(80,170,235,.65)' });
+        L.push({ t: 'zemin', x: X, y: Y, r: 9 * MM, c: 'rgba(80,170,235,.06)' });
+      } else if (o.tip === 'tas') {
+        L.push({ t: 'daire', x: X, y: Y, z: R * 0.3, r: R * 0.9, c: [190, 95, 60], a: 0.8 });
+        L.push({ t: 'zemin', x: X, y: Y, r: 8 * MM, c: 'rgba(255,120,60,.07)' });
+      }
+    }
+    for (const d of W._dekor || []) L.push(d);
+    return L;
+  }
+  function dolgulariCiz() {
+    if (!world) return;
+    const sinP = Math.sin(camPitch), q = [];
+    for (const d of world.dolgu) {
+      if (d.t === 'govde' || d.t === 'cizgi') {
+        const a = P(d.x, d.y, 0), b2 = P(d.x, d.y, d.h); if (!a || !b2) continue;
+        q.push([(a[2] + b2[2]) / 2, () => { ctx.strokeStyle = d.c; ctx.lineCap = 'round';
+          ctx.lineWidth = d.t === 'govde' ? Math.max(1, d.r * 2 * 300 / a[2]) : Math.max(0.6, d.w * 300 / a[2]);
+          ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b2[0], b2[1]); ctx.stroke(); }]);
+      } else if (d.t === 'daire') {
+        const p = P(d.x, d.y, d.z); if (!p) continue;
+        const rs = d.r * 300 / p[2]; if (rs < 0.4 || p[0] + rs < 0 || p[0] - rs > VW || p[1] + rs < 0 || p[1] - rs > VH) continue;
+        const a = d.a * Math.max(0.12, Math.min(1, (p[2] - 60) / 500));   // kameraya çok yakınsa saydamlaş
+        const [r0, g0, b0] = d.c;
+        q.push([p[2], () => {   // gölgeli küre: koyu taban + açık parlak bölge (gradyansız, hızlı)
+          ctx.fillStyle = `rgba(${Math.min(255, r0 + 45)},${Math.min(255, g0 + 45)},${Math.min(255, b0 + 45)},${a * 0.6})`;
+          ctx.beginPath(); ctx.arc(p[0] - rs * 0.28, p[1] - rs * 0.28, rs * 0.55, 0, 7); ctx.fill();
+          ctx.fillStyle = `rgba(${r0 * 0.75 | 0},${g0 * 0.75 | 0},${b0 * 0.75 | 0},${a})`;
+          ctx.beginPath(); ctx.arc(p[0], p[1], rs, 0, 7); ctx.fill(); }]);
+      } else if (d.t === 'zemin') {
+        const p = P(d.x, d.y, 0); if (!p) continue;
+        const rs = d.r * 300 / p[2]; if (p[0] + rs < 0 || p[0] - rs > VW || p[1] + rs * sinP < 0 || p[1] - rs * sinP > VH) continue;
+        q.push([p[2] + 1e5, () => { ctx.fillStyle = d.c; ctx.beginPath(); ctx.ellipse(p[0], p[1], rs, Math.max(0.5, rs * sinP), 0, 0, 7); ctx.fill(); }]);
+      }
+    }
+    q.sort((a, b2) => a[0] - b2[0]);          // destination-over: önce yakındakiler
+    for (const [, f] of q) f();
+    // zemin: arena (çimenlik) ve dışarısı (orman zemini)
+    const A = world.W.harita.arena * MM;
+    const kare = (s, renk) => {
+      const c = [[-s, -s], [s, -s], [s, s], [-s, s]].map(([px, py]) => P(px, py, 0));
+      if (c.some(v => !v)) { ctx.fillStyle = renk; ctx.fillRect(0, 0, VW, VH); return; }
+      ctx.fillStyle = renk; ctx.beginPath(); c.forEach((v, i) => i ? ctx.lineTo(v[0], v[1]) : ctx.moveTo(v[0], v[1])); ctx.closePath(); ctx.fill();
+    };
+    kare(A, '#16301d');
+    kare(A + 70 * MM, '#0f2116');
   }
   function izAl(f) {   // kare -> dünya durumu (20 ms adımlar arasında doğrusal)
     const iz = world.iz, t = f * r.bin_ms / 1000, adim = world.W.adim_ms / 1000;
@@ -1186,6 +1259,28 @@ const fly = (() => {
       for (let i = 0; i < 260; i++) { const rr = Math.sqrt((i * 0.618) % 1) * rad, t = i * 2.39996; nokta(P(gx + Math.cos(t) * rr, gy + Math.sin(t) * rr, 0.5), [40, 40, 60], 1.2); }
       for (let a = 0; a < 50; a++) { const t = a / 50 * Math.PI * 2; nokta(P(gx + Math.cos(t) * rad, gy + Math.sin(t) * rad, 0.5), [255, 92, 138], 1); }
     }
+  }
+  function etiketler(CW, CH) {   // nesnelerin üstünde küçük adlar (ne olduğu anlaşılsın)
+    const k = CW / VW, s = world.su; if (!s) return;
+    const ad = { agac: '🌳 ağaç · gölge', su: '💧 su · nem', tas: '🔥 sıcak taş' };
+    const yaz = (wx, wy, wz, txt, renk) => {
+      const p = P(wx, wy, wz); if (!p) return;
+      const X = p[0] * k, Y = p[1] * k - 8; if (X < 0 || X > CW || Y < 14 || Y > CH - 30) return;
+      if (camDist > 14) txt = txt.split(' ')[0];            // uzaktan: sadece simge
+      ctx.font = '11px system-ui,sans-serif'; const w = ctx.measureText(txt).width + 10;
+      ctx.fillStyle = 'rgba(8,12,18,.72)'; ctx.beginPath(); ctx.roundRect(X - w / 2, Y - 13, w, 17, 5); ctx.fill();
+      ctx.fillStyle = renk; ctx.fillText(txt, X - w / 2 + 5, Y);
+    };
+    for (const o of world.W.harita.nesneler) {
+      const X = o.x * MM, Y = o.y * MM;
+      if (o.tip === 'agac') yaz(X, Y, (o.boy + o.tac * 0.9) * MM, ad.agac, '#9fe0b0');
+      else if (o.tip === 'meyve') yaz(X, Y, o.r * 2.4 * MM, o.tur === 'muz' ? '🍌 muz · koku + tat' : '🍎 elma · koku + tat', '#ffb0a0');
+      else if (o.tip === 'cicek') yaz(X, Y, (o.boy + 3) * MM, '🌸 çiçek · koku + nektar', '#d8c0ff');
+      else if (o.tip === 'su') yaz(X, Y, 2 * MM, ad.su, '#a8dcff');
+      else if (o.tip === 'tas') yaz(X, Y, o.r * MM, ad.tas, '#ffb890');
+    }
+    yaz(s.fx * MM, s.fy * MM, 5 * MM, '♀ dişi sinek · feromon', '#ffb4dc');
+    if (camDist > 6) yaz(x, y, alt * 30 + 6 * MM, '▼ sinek', '#66FF9E');
   }
   function miniHarita(CW, CH) {   // sağ altta kuşbakışı harita (CSS px)
     const S2 = Math.min(150, CW * 0.28), ox = CW - S2 - 10, oy = CH - S2 - 22, A = world.W.harita.arena;
@@ -1427,7 +1522,7 @@ const fly = (() => {
     }
 
     // etiket ve bilgi kutusu: büyük modda büyümesin diye ekran pikselinde (CSS px) çizilir
-    const dpx = window.devicePixelRatio || 1, CW = cv.width / dpx, CH = cv.height / dpx;
+    const dpx = flyDpr(), CW = cv.width / dpx, CH = cv.height / dpx;
     ctx.setTransform(dpx, 0, 0, dpx, 0, 0);
     ctx.fillStyle = 'rgba(124,139,157,.9)'; ctx.font = '10px ui-monospace,monospace';
     if (r) {
@@ -1441,7 +1536,7 @@ const fly = (() => {
     ctx.fillStyle = 'rgba(78,93,110,.9)';
     if (CW > 420) ctx.fillText('sürükle: döndür · tekerlek: yakınlaş', CW - 196, 13);
     pusula();
-    if (world) miniHarita(CW, CH);
+    if (world) { etiketler(CW, CH); miniHarita(CW, CH); }
   }
 
   // sol üst: pusula + yön/yol bilgisi, üst orta: anlık hareket
