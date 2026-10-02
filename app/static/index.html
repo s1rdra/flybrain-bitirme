@@ -569,8 +569,9 @@ const fly = (() => {
   const ESIK = { yeme: 50, kacis: 30, ileri: 40, geri: 40, sol: 50, sag: 50 }; // Hz -> 1.0
   const KOKU_RENK = { sirke: [255, 190, 90], co2: [170, 180, 195], kuf: [120, 200, 110], feromon: [255, 120, 200] };
   const TAT_RENK = { seker: [79, 195, 247], aci: [255, 180, 84], tuz: [232, 238, 245] };
-  let r = null, seri = null, F = 0;
+  let r = null, seri = null, seriHz = null, F = 0;
   let x = 0, y = 0, th = 0, leg = 0, jump = 0, last = -1, food = null;
+  let trail = [], yol = 0, vNow = 0, omNow = 0;   // iz, kat edilen yol, anlık hız / dönüş
   let act = { yeme: 0, kacis: 0, ileri: 0, geri: 0, sol: 0, sag: 0 };
   let camYaw = -0.75, camPitch = 0.55, camDist = 0.8;
 
@@ -617,22 +618,23 @@ const fly = (() => {
     const o = res.kare_ofset, ns = res.kare_noron;
     for (let f = 0; f < F; f++) for (let k = o[f]; k < o[f + 1]; k++) { const m = map[ns[k]]; if (m >= 0) cnt[m][f]++; }
     const W = Math.max(1, Math.round(40 / res.bin_ms)); // 40 ms kayan pencere
-    seri = {};
+    seri = {}; seriHz = {};
     res.davranis.forEach((d, k) => {
-      const a = new Float32Array(F), c = cnt[k], n = Math.max(1, d.n);
+      const a = new Float32Array(F), ah = new Float32Array(F), c = cnt[k], n = Math.max(1, d.n);
       let sum = 0;
       for (let f = 0; f < F; f++) {
         sum += c[f]; if (f >= W) sum -= c[f - W];
         const hz = sum / n / (Math.min(f + 1, W) * res.bin_ms / 1000);
-        a[f] = Math.min(1, hz / ESIK[d.id]);
+        a[f] = Math.min(1, hz / ESIK[d.id]); ah[f] = hz;
       }
-      seri[d.id] = a;
+      seri[d.id] = a; seriHz[d.id] = ah;
     });
     reset();
   }
 
   function reset() {
     x = 0; y = 0; th = 0; leg = 0; jump = 0; last = -1;
+    trail = [[0, 0]]; yol = 0; vNow = 0; omNow = 0;
     for (const k in act) act[k] = 0;
     const d = r ? r.kosul.duyular : {};
     const tat = Object.keys(TAT_RENK).filter(k => d[k]);
@@ -642,11 +644,16 @@ const fly = (() => {
   function step(f) {
     const dt = r.bin_ms / 1000;
     for (const k in act) act[k] = seri[k] ? seri[k][f] : 0;
-    const v = (act.ileri - act.geri) * 110;          // birim / sim-sn
-    const om = (act.sag - act.sol) * 4.5;             // rad / sim-sn (+ = sağa)
+    // ileri/geri ve sol/sağ nöronları birbirine karşı yarışır: farkları hareketi belirler
+    const hz = k => seriHz[k] ? seriHz[k][f] : 0, cl = q => Math.max(-1, Math.min(1, q));
+    const v = cl((hz('ileri') - hz('geri')) / 80) * 110;   // birim / sim-sn
+    const om = cl((hz('sag') - hz('sol')) / 80) * 4.5;      // rad / sim-sn (+ = sağa)
     th += om * dt;
     x += Math.sin(th) * v * dt; y += Math.cos(th) * v * dt;
     leg += (Math.abs(v) * 0.09 + Math.abs(om) * 1.4) * dt;
+    vNow = v; omNow = om; yol += v * dt;
+    const lt = trail[trail.length - 1];
+    if (Math.hypot(x - lt[0], y - lt[1]) > 1.5) { trail.push([x, y]); if (trail.length > 400) trail.shift(); }
     jump = Math.max(jump * Math.pow(0.02, dt), act.kacis);
   }
 
@@ -667,7 +674,7 @@ const fly = (() => {
     const p = [];
     if (act.kacis > 0.2) p.push('<b>KAÇIŞ: sıçrıyor!</b>');
     if (act.yeme > 0.25) p.push('<b>Hortumunu uzatıyor</b> (yemek istiyor)');
-    const v = act.ileri - act.geri, om = act.sag - act.sol;
+    const v = vNow / 110, om = omNow / 4.5;
     if (v > 0.15) p.push('İleri yürüyor'); else if (v < -0.15) p.push('Geri geri gidiyor');
     if (om > 0.15) p.push('Sağa dönüyor'); else if (om < -0.15) p.push('Sola dönüyor');
     return p.length ? p.join(' · ') : 'Duruyor';
@@ -691,7 +698,7 @@ const fly = (() => {
   // sineğin yerel koordinatından dünyaya
   function yerel(lx, ly, lz) {
     const c = Math.cos(th), s = Math.sin(th);
-    return [x + lx * c + ly * s, y - lx * s + ly * c, lz + jump * 16 + 6];
+    return [x + lx * c + ly * s, y - lx * s + ly * c, lz + jump * 8 + 6];
   }
   function nokta(p, rgb, b) {
     if (!p) return;
@@ -722,6 +729,35 @@ const fly = (() => {
     for (let i = -R; i <= R; i++) for (let j = -R; j <= R; j++) {
       const p = P(gx0 + i * g, gy0 + j * g, 0);
       if (p) { const a = Math.max(0, 1 - Math.hypot(i, j) / R); ctx.fillStyle = `rgba(70,110,130,${0.5 * a})`; ctx.fillRect(p[0] - 0.6, p[1] - 0.6, 1.2, 1.2); }
+    }
+    // hareket izi (zeminde, eskisi soluk)
+    for (let i = 0; i < trail.length; i++) {
+      const a = (i + 1) / trail.length;
+      nokta(P(trail[i][0], trail[i][1], 0), [200, 255, 120], 0.25 + 0.6 * a);
+    }
+    // baş yönü: önde sabit soluk ok + hareket okları
+    const hx = Math.sin(th), hy = Math.cos(th);
+    const zemin = (fx, fy, rgb, b) => nokta(P(x + fx, y + fy, 0.5), rgb, b);
+    const ok = (len, sgn, rgb, b) => {   // ileri (+1) / geri (-1) oku
+      const st = sgn > 0 ? 22 : -28, en = st + sgn * len;
+      for (let t = 0; t <= len; t += 1.6) zemin(hx * (st + sgn * t), hy * (st + sgn * t), rgb, b);
+      for (let k = 0; k < 8; k++) for (const sd of [-1, 1]) {
+        const bx = en - sgn * k * 1.2, sx = sd * k * 0.9;
+        zemin(hx * bx + hy * sx, hy * bx - hx * sx, rgb, b);
+      }
+    };
+    ok(6, 1, [120, 160, 150], 0.5);
+    if (Math.abs(vNow) > 6) ok(10 + Math.abs(vNow) / 110 * 32, Math.sign(vNow), [255, 180, 84], 1.4);
+    // dönüş oku: sineğin etrafında yay
+    if (Math.abs(omNow) > 0.3) {
+      const R = 30, span = Math.min(Math.PI * 1.2, 0.5 + Math.abs(omNow) / 4.5 * 2.2), sg = Math.sign(omNow);
+      let a = 0;
+      for (; a <= span; a += 0.05) { const ang = th + sg * a; zemin(Math.sin(ang) * R, Math.cos(ang) * R, [255, 92, 138], 1.4); }
+      const ang = th + sg * span, tx = Math.cos(ang) * sg, ty = -Math.sin(ang) * sg; // yay teğeti
+      for (let k = 0; k < 8; k++) for (const sd of [-1, 1]) {
+        const px0 = Math.sin(ang) * R - tx * k * 1.2, py0 = Math.cos(ang) * R - ty * k * 1.2;
+        zemin(px0 + Math.sin(ang) * sd * k * 0.9, py0 + Math.cos(ang) * sd * k * 0.9, [255, 92, 138], 1.4);
+      }
     }
     // sıçrarken zemindeki gölge halkası
     if (jump > 0.03) for (let a = 0; a < 36; a++) {
@@ -822,6 +858,35 @@ const fly = (() => {
     }
     ctx.fillStyle = 'rgba(78,93,110,.9)';
     ctx.fillText('sürükle: döndür', VW - 92, 13);
+    pusula();
+  }
+
+  // sol üst: pusula + yön/yol bilgisi, üst orta: anlık hareket
+  function pusula() {
+    const cx = 27, cy = 33, R = 14;
+    ctx.fillStyle = 'rgba(11,17,24,.82)'; ctx.strokeStyle = 'rgba(31,43,58,1)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(5, 5, 124, 66, 6); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(124,139,157,.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
+    ctx.fillStyle = 'rgba(124,139,157,.8)'; ctx.font = '8px ui-monospace,monospace'; ctx.fillText('başlangıç', cx - 18, cy - R - 3);
+    // başlangıç yönü çizgisi (kamera açısına göre)
+    const a0 = -camYaw, ax = Math.sin(th - camYaw), ay = Math.cos(th - camYaw);
+    ctx.strokeStyle = 'rgba(124,139,157,.6)'; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.sin(a0) * R, cy - Math.cos(a0) * R); ctx.stroke();
+    ctx.strokeStyle = '#66FF9E'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + ax * R, cy - ay * R); ctx.stroke();
+    ctx.fillStyle = '#66FF9E'; ctx.beginPath(); ctx.arc(cx + ax * R, cy - ay * R, 2.5, 0, 7); ctx.fill();
+    let deg = Math.round(th * 180 / Math.PI) % 360; if (deg > 180) deg -= 360; if (deg < -180) deg += 360;
+    const mm = yol * 0.0625;   // gövde ~40 birim ≈ 2,5 mm
+    ctx.fillStyle = 'rgba(215,225,236,.9)'; ctx.font = '10px ui-monospace,monospace';
+    ctx.fillText(`yön ${deg === 0 ? '0°' : Math.abs(deg) + '° ' + (deg > 0 ? 'sağ' : 'sol')}`, cx + R + 8, cy - 3);
+    ctx.fillText(`yol ${mm >= 0 ? '+' : ''}${mm.toFixed(1)} mm`, cx + R + 8, cy + 10);
+    // anlık hareket rozeti
+    const p = [];
+    if (vNow > 6) p.push(['▲ İLERİ', '#FFB454']); else if (vNow < -6) p.push(['▼ GERİ', '#FFB454']);
+    if (omNow > 0.3) p.push(['↻ SAĞA', '#FF5C8A']); else if (omNow < -0.3) p.push(['↺ SOLA', '#FF5C8A']);
+    ctx.font = 'bold 10px ui-monospace,monospace';
+    let xx = 11;
+    if (!p.length) p.push(['■ YERİNDE', 'rgba(124,139,157,.9)']);
+    for (const [t, c] of p) { ctx.fillStyle = c; ctx.fillText(t, xx, 63); xx += 58; }
   }
 
   function koku(k, T) {
