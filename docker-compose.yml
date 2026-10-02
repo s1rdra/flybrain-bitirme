@@ -2,6 +2,7 @@ services:
   flybrain:
     build: .
     image: flybrain-bitirme
+    pull_policy: build                    # imajı Docker Hub'da arama, yerelde derle
     container_name: flybrain
     ports:
       - "8000:8000"

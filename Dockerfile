@@ -21,6 +21,11 @@ WORKDIR /opt/flybrain
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install -r requirements.txt -r /tmp/requirements.txt
 
+# Nöron etiket dosyası FlyWire tarafında 2026-09-29'da güncellendi; kaynak projenin
+# beklediği sürüme (boyut kontrolü tutsun diye) sabitliyoruz
+ARG ANNOTATIONS_COMMIT=17fc57722002e1a7d38cdd0c89ac382bf92718da
+RUN sed -i "s#flywire_annotations/main/#flywire_annotations/${ANNOTATIONS_COMMIT}/#" scripts/get_data.py
+
 # Connectome verisi (~120 MB) imajın içine bir kere indirilir
 RUN python scripts/get_data.py
 
