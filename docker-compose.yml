@@ -1,0 +1,10 @@
+services:
+  flybrain:
+    build: .
+    image: flybrain-bitirme
+    container_name: flybrain
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./results:/opt/flybrain/results   # simülasyon çıktıları bilgisayarına düşer
+      - ./app:/opt/app                    # bizim kodumuz (canlı düzenlenebilir)

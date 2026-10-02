@@ -1,0 +1,2 @@
+# Kaynak projenin ihtiyaçlarına ek olarak bizim kullanacağımız paketler
+# (arayüzü yazarken buraya eklenecek: fastapi, uvicorn ...)
