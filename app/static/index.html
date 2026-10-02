@@ -110,8 +110,14 @@ td.nt{color:var(--dim);font-size:11px}
 #load{position:fixed;inset:0;background:rgba(10,14,20,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:9;font:13px var(--mono);color:var(--muted)}
 #load b{color:var(--accent);font-size:15px;letter-spacing:.1em}
 .flybox{margin:4px 0 6px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.flybox .hd{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);font:600 11px var(--mono);letter-spacing:.12em;color:var(--muted);cursor:pointer;user-select:none}
-.flybox .hd span{margin-left:auto;font-weight:400;letter-spacing:0}
+.flybox .hd{display:flex;align-items:center;gap:10px;white-space:nowrap;overflow:hidden;font-size:10.5px !important;padding:6px 10px;border-bottom:1px solid var(--line);font:600 11px var(--mono);letter-spacing:.12em;color:var(--muted);cursor:pointer;user-select:none}
+.flybox .hd span{font-weight:400;letter-spacing:0;cursor:pointer}
+.flybox .hd span:hover{color:var(--text)}
+#flybig{margin-left:auto}
+.flybox.big{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(94vw,calc(86vh * 300 / 220),1100px);z-index:30;box-shadow:0 30px 90px rgba(0,0,0,.7);margin:0}
+.flybox.big .act{font-size:14px}
+#flyback{display:none;position:fixed;inset:0;background:rgba(5,8,12,.72);z-index:29}
+#flyback.on{display:block}
 .flybox canvas{display:block;width:100%;height:auto;aspect-ratio:300/220}
 .flybox .act{padding:5px 10px 7px;font-size:12px;color:var(--text);min-height:24px;border-top:1px solid var(--line)}
 .flybox .act b{color:var(--out)}
@@ -121,6 +127,7 @@ td.nt{color:var(--dim);font-size:11px}
 </head>
 <body>
 <div id="load"><b>SANAL SİNEK BEYNİ</b><span id="loadmsg">Sunucuya bağlanılıyor ...</span></div>
+<div id="flyback"></div>
 <div class="app">
   <header>
     <h1>SANAL SİNEK BEYNİ</h1>
@@ -214,7 +221,7 @@ td.nt{color:var(--dim);font-size:11px}
   <!-- ===================== SAĞ: SONUÇLAR ===================== -->
   <aside class="right">
     <div class="flybox" id="flybox">
-        <div class="hd" id="flyhd">SİNEK · DIŞTAN GÖRÜNÜM <span id="flymin">küçült ▴</span></div>
+        <div class="hd" id="flyhd">SİNEK · DIŞTAN GÖRÜNÜM <span id="flybig" title="Büyük pencerede aç">⤢ büyüt</span><span id="flymin" title="Küçült">küçült ▴</span></div>
         <canvas id="flycv" width="600" height="440"></canvas>
         <div class="act" id="flyact">Deney bekleniyor.</div>
       </div>
@@ -669,31 +676,102 @@ const fly = (() => {
   let alt = 0, kalkis = 0, ucuyor = false;   // uçuş: irtifa (0-1), kalkış zamanlayıcısı
   let camYaw = -0.75, camPitch = 0.55, camDist = 0.8;
 
-  // ---- sabit gövde: elipsoid yüzeylerine eşit dağılmış noktalar (Fibonacci küresi)
-  const BODY = [];   // [x, y, z, parlaklık]
-  function elipsoid(cx, cy, cz, rx, ry, rz, n, b = 1) {
+  // ---- sabit gövde: yüzeylere eşit dağılmış noktalar (Fibonacci küresi) — içi boş
+  // eksenler: x sağ, y ileri (baş), z yukarı. 1 birim ≈ 0,06 mm
+  const YESIL = [102, 255, 158], YESIL2 = [70, 200, 130], PARLAK = [190, 255, 215],
+        GOZ = [255, 105, 105], DAMAR = [150, 235, 255], ZAR = [150, 210, 240], KIL = [120, 200, 150],
+        HORTUM = [255, 170, 200];
+  const BODY = [];   // [x, y, z, renk, parlaklık]
+  function elipsoid(cx, cy, cz, rx, ry, rz, n, renk = YESIL, b = 1, filtre = null) {
     const ga = Math.PI * (3 - Math.sqrt(5));
     for (let i = 0; i < n; i++) {
       const zz = 1 - (i + 0.5) / n * 2, rr = Math.sqrt(1 - zz * zz), a = i * ga;
-      BODY.push([cx + Math.cos(a) * rr * rx, cy + zz * ry, cz + Math.sin(a) * rr * rz, b]);
+      const p = [Math.cos(a) * rr, zz, Math.sin(a) * rr];
+      if (filtre && !filtre(p)) continue;
+      BODY.push([cx + p[0] * rx, cy + p[1] * ry, cz + p[2] * rz, renk, b]);
     }
   }
-  // eksenler: x sağ, y ileri (baş), z yukarı
-  elipsoid(0, -15, 3, 7, 12.5, 6.2, 520);        // karın
-  elipsoid(0, 0, 4, 7.2, 8, 6.8, 360);           // göğüs
-  elipsoid(0, 10.5, 4, 6, 4.2, 5, 200);          // baş
-  elipsoid(-4.6, 10.6, 4.5, 2.9, 3.4, 4, 110, 1.6);  // gözler (daha parlak)
-  elipsoid(4.6, 10.6, 4.5, 2.9, 3.4, 4, 110, 1.6);
-  for (let i = 0; i < 6; i++) {                  // karın halkaları
-    const yy = -8 - i * 3.6, k = Math.sqrt(Math.max(0, 1 - ((yy + 15) / 12.5) ** 2));
-    for (let a = 0; a < 40; a++) { const t = a / 40 * Math.PI * 2; BODY.push([Math.cos(t) * 7 * k * 1.01, yy, 3 + Math.sin(t) * 6.2 * k * 1.01, 1.5]); }
+  function cizgi(a, b, n, renk = YESIL, br = 1) {
+    for (let i = 0; i <= n; i++) { const t = i / n; BODY.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, renk, br]); }
   }
+  // karın: yüzey + segment (tergit) şeritleri + kıllar + uç
+  elipsoid(0, -15, 3, 7, 12.5, 6.2, 1300, YESIL, 0.9);
+  for (let i = 0; i < 6; i++) {
+    const yy = -6.5 - i * 3.7, k = Math.sqrt(Math.max(0, 1 - ((yy + 15) / 12.5) ** 2));
+    for (let w = 0; w < 3; w++) for (let a = 0; a < 70; a++) {   // sırtta kalın koyu şerit = parlak bant
+      const t = a / 69 * Math.PI * 1.15 - 0.075, yb = yy - w * 0.55;
+      const kk = Math.sqrt(Math.max(0, 1 - ((yb + 15) / 12.5) ** 2)) * 1.015;
+      BODY.push([Math.cos(t) * 7 * kk, yb, 3 + Math.sin(t) * 6.2 * kk, PARLAK, 1.15]);
+    }
+  }
+  for (let i = 0; i < 60; i++) {   // karın kılları (kısa dikenler, geriye yatık)
+    const t = (i * 2.39996) % (Math.PI), yy = -6 - (i * 7.31 % 20);
+    const k = Math.sqrt(Math.max(0, 1 - ((yy + 15) / 12.5) ** 2));
+    const px = Math.cos(t) * 7 * k, pz = 3 + Math.sin(t) * 6.2 * k;
+    cizgi([px, yy, pz], [px * 1.08, yy - 1.4, pz + 0.7], 2, KIL, 0.6);
+  }
+  elipsoid(0, -27.6, 2.6, 2.2, 1.6, 2, 60, YESIL, 1);                  // uç
+  // göğüs (toraks) + skutellum + kıllar
+  elipsoid(0, 0, 4, 7.2, 8, 6.8, 1000, YESIL, 0.95);
+  elipsoid(0, -6.6, 9.3, 3.6, 2.6, 1.4, 120, YESIL, 1.1, p => p[2] > -0.1);
+  for (let a = 0; a < 40; a++) { const t = a / 40 * Math.PI * 2; BODY.push([Math.cos(t) * 7.25, Math.sin(t) * 0.6 + 7.2, 4 + Math.sin(t) * 6.85 * 0.15, PARLAK, 0.9]); } // boyun halkası
+  const KILLAR = [[2.4, 4.5, 10.3], [-2.4, 4.5, 10.3], [3.6, 1, 10.4], [-3.6, 1, 10.4], [2.2, -2.2, 10.7], [-2.2, -2.2, 10.7],
+                  [5.2, 3, 8.8], [-5.2, 3, 8.8], [5.8, -1.5, 8.2], [-5.8, -1.5, 8.2], [1.6, -7.2, 10.3], [-1.6, -7.2, 10.3], [2.6, -8.3, 9.6], [-2.6, -8.3, 9.6]];
+  for (const k of KILLAR) cizgi(k, [k[0] * 1.15, k[1] - 3.2, k[2] + 2.3], 6, KIL, 0.85);   // makroket kıllar
+  for (let i = 0; i < 90; i++) {   // mikroket (ince kıl tabanları) — sırtta seyrek noktalar
+    const t = 0.25 + (i * 0.61803 % 1) * (Math.PI - 0.5), yy = 6 - (i * 0.37 % 1) * 11;
+    const k = Math.sqrt(Math.max(0, 1 - (yy / 8) ** 2));
+    BODY.push([Math.cos(t) * 7.3 * k, yy, 4 + Math.sin(t) * 6.9 * k + 0.25, PARLAK, 0.7]);
+  }
+  // baş
+  elipsoid(0, 10.4, 4, 6, 4.2, 5, 520, YESIL, 0.95);
+  // bileşik gözler: altıgen ommatid ızgarası (gözün dış yüzü)
+  for (const sd of [-1, 1]) {
+    const cx = sd * 4.7, cy = 10.7, cz = 4.6, rx = 2.9, ry = 3.5, rz = 4.1;
+    for (let row = -9; row <= 9; row++) for (let col = -8; col <= 8; col++) {
+      const u = (col + (row & 1) * 0.5) / 8.5, v = row / 9.5;           // altıgen ofset
+      const q = u * u + v * v; if (q > 1) continue;
+      const nz = Math.sqrt(1 - q);                                       // gözün dışa bakan yarısı
+      BODY.push([cx + sd * nz * rx * 0.95 + sd * 0.35, cy + u * ry, cz + v * rz, GOZ, 1.05]);
+    }
+  }
+  for (const [ox, oy, oz] of [[0, 9.6, 9.1], [1.3, 8.4, 8.9], [-1.3, 8.4, 8.9]])          // üç ocellus (basit göz)
+    elipsoid(ox, oy, oz, 0.55, 0.55, 0.35, 14, PARLAK, 1.6);
+  for (const sd of [-1, 1]) {                                            // ocellar + vertikal kıllar
+    cizgi([sd * 0.8, 8.9, 9.1], [sd * 1.6, 6.5, 11.6], 5, KIL, 0.8);
+    cizgi([sd * 3.2, 8.3, 8.5], [sd * 4.8, 5.8, 10.6], 5, KIL, 0.8);
+  }
+  // antenler: skape, pedisel, funikulus + tüylü arista
+  for (const sd of [-1, 1]) {
+    cizgi([sd * 1.1, 14.2, 6.3], [sd * 1.6, 15.1, 6.6], 3, YESIL, 1.2);
+    elipsoid(sd * 1.9, 15.4, 6.3, 0.7, 0.7, 0.7, 14, YESIL, 1.2);
+    elipsoid(sd * 2.3, 16.0, 5.1, 1.0, 0.9, 1.6, 40, YESIL, 1.1);
+    const a0 = [sd * 2.9, 16.2, 6.2], a1 = [sd * 7.2, 18.6, 9.6];
+    cizgi(a0, a1, 14, PARLAK, 0.9);
+    for (let j = 1; j <= 6; j++) {                                       // arista dalları
+      const t = j / 7, px = a0[0] + (a1[0] - a0[0]) * t, py = a0[1] + (a1[1] - a0[1]) * t, pz = a0[2] + (a1[2] - a0[2]) * t;
+      cizgi([px, py, pz], [px, py + 0.9, pz + 1.3], 2, KIL, 0.6);
+      cizgi([px, py, pz], [px, py - 0.6, pz - 1.2], 2, KIL, 0.6);
+    }
+  }
+  for (const sd of [-1, 1]) elipsoid(sd * 1.8, 14.3, 1.3, 0.6, 1.3, 0.6, 18, YESIL, 1.1);   // maksiller palpler
+  elipsoid(0, 13.6, 0.6, 1.6, 1.5, 1.2, 30, HORTUM, 0.9);                                  // hortum kökü (rostrum)
+
+  // ---- çizim için kova sistemi (aynı renk/opaklıktaki noktalar tek seferde)
+  const KOVA = new Map();
+  let OLCEK = 2;
 
   function init() {
-    $('#flyhd').onclick = () => {
-      const b = $('#flybox'); b.classList.toggle('min');
-      $('#flymin').textContent = b.classList.contains('min') ? 'büyüt ▾' : 'küçült ▴';
+    const box = $('#flybox');
+    $('#flymin').onclick = e => {
+      e.stopPropagation(); if (box.classList.contains('big')) buyuk(false);
+      box.classList.toggle('min');
+      $('#flymin').textContent = box.classList.contains('min') ? 'aç ▾' : 'küçült ▴';
     };
+    $('#flybig').onclick = e => { e.stopPropagation(); buyuk(!box.classList.contains('big')); };
+    $('#flyback').onclick = () => buyuk(false);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') buyuk(false); });
+    new ResizeObserver(boyut).observe(cv); boyut();
     let drag = null;
     cv.style.cursor = 'grab';
     cv.onpointerdown = e => { drag = [e.clientX, e.clientY, camYaw, camPitch]; cv.setPointerCapture(e.pointerId); };
@@ -702,6 +780,21 @@ const fly = (() => {
     cv.onwheel = e => { e.preventDefault(); camDist = Math.max(0.6, Math.min(2.2, camDist * Math.exp(e.deltaY * 0.001))); };
     cv.ondblclick = () => { camYaw = -0.75; camPitch = 0.55; camDist = 0.8; };
     requestAnimationFrame(loop);
+  }
+
+  function boyut() {   // tuvali ekran çözünürlüğüne eşitle (büyük modda detay için)
+    const rc = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    if (!rc.width) return;
+    cv.width = Math.round(rc.width * d); cv.height = Math.round(rc.width * d * VH / VW);
+    OLCEK = cv.width / VW;
+  }
+  function buyuk(on) {
+    const box = $('#flybox');
+    box.classList.toggle('big', on); box.classList.remove('min');
+    $('#flyback').classList.toggle('on', on);
+    $('#flybig').textContent = on ? '✕ kapat' : '⤢ büyüt';
+    $('#flymin').textContent = 'küçült ▴';
+    requestAnimationFrame(boyut);
   }
 
   function set(res) {
@@ -802,14 +895,26 @@ const fly = (() => {
     const c = Math.cos(th), s = Math.sin(th);
     return [x + lx * c + ly * s, y - lx * s + ly * c, lz + jump * 8 + alt * 30 + 6];
   }
-  function nokta(p, rgb, b) {
+  function nokta(p, rgb, b) {   // noktayı renk/opaklık kovasına koy; çizim bosalt() ile topluca
     if (!p) return;
     const k = Math.max(0.25, Math.min(1.3, 130 / p[2])) * b;
-    const sz = k > 0.9 ? 1.6 : 1.1;
-    ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${Math.min(1, 0.35 + 0.5 * k)})`;
-    ctx.fillRect(p[0] - sz / 2, p[1] - sz / 2, sz, sz);
+    const lv = Math.round(Math.min(1, 0.3 + 0.5 * k) * 16);
+    const key = (rgb.k || (rgb.k = rgb.join(','))) + '|' + lv + '|' + (k > 0.9 ? 1 : 0);
+    let arr = KOVA.get(key); if (!arr) { arr = []; KOVA.set(key, arr); }
+    arr.push(p[0], p[1]);
   }
-  const YESIL = [102, 255, 158];
+  function bosalt() {
+    const d = window.devicePixelRatio || 1;
+    const af = Math.max(0.42, Math.min(1, Math.sqrt(OLCEK / d / 4.5)));   // küçük pencerede nokta yoğunluğu parlamasın
+    for (const [key, arr] of KOVA) {
+      if (!arr.length) continue;
+      const [c, lv, big] = key.split('|');
+      ctx.fillStyle = `rgba(${c},${(lv / 16 * af).toFixed(3)})`;
+      const sz = (big === '1' ? 1.6 : 1.1) * d / OLCEK;   // ekranda sabit piksel boyu
+      for (let i = 0; i < arr.length; i += 2) ctx.fillRect(arr[i] - sz / 2, arr[i + 1] - sz / 2, sz, sz);
+      arr.length = 0;
+    }
+  }
   function lyerel(a, b, n, rgb = YESIL, br = 1) {   // yerel iki nokta arası noktalı çizgi
     for (let i = 0; i <= n; i++) {
       const t = i / n;
@@ -877,43 +982,107 @@ const fly = (() => {
     }
 
     // ---- sinek
-    // gövde
-    for (const q of BODY) nokta(P(...yerel(q[0], q[1], q[2])), YESIL, q[3]);
-    // bacaklar (üçlü yürüyüş, noktalı)
+    // gövde (sabit noktalar)
+    for (const q of BODY) nokta(P(...yerel(q[0], q[1], q[2])), q[3], q[4]);
+    // bacaklar: koksa, femur, tibia, 5 tarsomer + pençeler (üçlü yürüyüş)
+    const tuck = Math.max(jump, alt);
     for (let side = -1; side <= 1; side += 2) for (let i = 0; i < 3; i++) {
       const grp = (i + (side > 0 ? 1 : 0)) % 2;
       const ph = (leg + grp * 0.5) * Math.PI * 2;
-      const tuck = Math.max(jump, alt);
       const sw = Math.sin(ph) * 4 * (1 - tuck), lift = Math.max(0, Math.cos(ph)) * 3 * (1 - tuck) + alt * 5;
-      const ay = 4 - i * 5;
-      const hip = [side * 5, ay, 1], knee = [side * 13, ay + (1 - i) * 6 + sw * 0.6, 7 + lift],
-            foot = [side * (18 + jump * 6), ay + (1 - i) * 13 + sw, -6 + lift - jump * 8];
-      lyerel(hip, knee, 7); lyerel(knee, foot, 9);
+      const ay = 4 - i * 5, fwd = (1 - i);
+      const hip = [side * 4.8, ay, 0.8];
+      const cox = [side * 6.6, ay + fwd * 1.2, -0.6];
+      const knee = [side * 12.5, ay + fwd * 5.5 + sw * 0.5, 6.5 + lift];
+      const ank = [side * (16 + jump * 5), ay + fwd * 11 + sw * 0.9, -3.2 + lift - jump * 7];
+      const foot = [side * (17.5 + jump * 6), ay + fwd * 14.5 + sw, -5.6 + lift - jump * 8];
+      lyerel(hip, cox, 4, YESIL, 1.1);
+      // femur: kalın (iki paralel sıra)
+      lyerel(cox, knee, 12, YESIL, 1.05); lyerel([cox[0], cox[1], cox[2] + 0.6], [knee[0], knee[1], knee[2] + 0.5], 12, YESIL2, 0.8);
+      lyerel(knee, ank, 13, YESIL, 1);
+      for (let b = 1; b <= 4; b++) {                    // tibia dikenleri
+        const t = b / 5, px = knee[0] + (ank[0] - knee[0]) * t, py = knee[1] + (ank[1] - knee[1]) * t, pz = knee[2] + (ank[2] - knee[2]) * t;
+        lyerel([px, py, pz], [px + side * 0.9, py - 0.4, pz + 0.9], 2, KIL, 0.6);
+      }
+      // tarsus: 5 parça, eklemlerde parlak boğum
+      let prev = ank;
+      const L = [0.34, 0.22, 0.17, 0.14, 0.13];
+      let acc = 0;
+      for (const l of L) {
+        acc += l;
+        const nx = [ank[0] + (foot[0] - ank[0]) * acc, ank[1] + (foot[1] - ank[1]) * acc, ank[2] + (foot[2] - ank[2]) * acc];
+        lyerel(prev, nx, 3, YESIL, 0.95);
+        nokta(P(...yerel(...nx)), PARLAK, 1.4);
+        prev = nx;
+      }
+      for (const cs of [-1, 1]) lyerel(foot, [foot[0] + side * 0.6 + cs * 0.5, foot[1] + fwd * 0.9 + 0.6, foot[2] - 0.6], 2, PARLAK, 1.1); // pençeler
+      nokta(P(...yerel(...knee)), PARLAK, 1.5); nokta(P(...yerel(...ank)), PARLAK, 1.3);
     }
-    // kanatlar: çerçeve + seyrek iç noktalar (yarı saydam)
+    // kanatlar: kenar + damarlar (L1–L5, çapraz damarlar) + zar + kenar kılları
     const fazlar = alt > 0.1 ? [Math.sin(T * 55), Math.sin(T * 55 + 2.2)] : [null];
     for (const fz of fazlar) {
-    const wa = fz === null ? 0.2 + jump * 1.1 : 1.0 + fz * 0.55, wl = fz === null ? 0.15 + jump * 0.5 : 0.35 + fz * 0.45;
+      const wa = fz === null ? 0.2 + jump * 1.1 : 1.0 + fz * 0.55, wl = fz === null ? 0.15 + jump * 0.5 : 0.35 + fz * 0.45;
+      const op = fz === null ? 1 : 0.6;
+      for (const sd of [-1, 1]) {
+        const c = Math.cos(sd * wa), s = Math.sin(sd * wa);
+        const W = (u, v) => [sd * 2.5 + u * c + v * s, -1 - u * s + v * c, 9.2 + Math.abs(u) * wl];
+        const cu = sd * 5, cv = -14, ru = 5, rv = 13.5;
+        const E = t => [cu + ru * Math.cos(t), cv + rv * Math.sin(t)];   // kanat kenarı (elips)
+        const hinge = [sd * 0.8, -1.2];
+        for (let a = 0; a < 110; a++) {                                    // kenar
+          const t = a / 110 * Math.PI * 2, e = E(t);
+          if (Math.hypot(e[0] - hinge[0], e[1] - hinge[1]) < 2) continue;
+          nokta(P(...yerel(...W(e[0], e[1]))), DAMAR, 0.85 * op);
+          if (a % 2 === 0 && t > Math.PI * 0.95 && t < Math.PI * 2.05) {     // kenar kılları
+            const o = [e[0] + (e[0] - cu) * 0.06, e[1] + (e[1] - cv) * 0.04];
+            nokta(P(...yerel(...W(o[0], o[1]))), ZAR, 0.45 * op);
+          }
+        }
+        // damarlar: kökten kenara (kenar açıları tepe ucuna göre dağıtılmış)
+        const damarlar = [Math.PI * 1.22, Math.PI * 1.38, Math.PI * 1.5, Math.PI * 1.63, Math.PI * 1.85];
+        const sdT = t => sd > 0 ? t : Math.PI - (t - Math.PI);              // sol kanatta ayna
+        const uc = damarlar.map(t => E(sdT(t)));
+        for (const e of uc) {
+          const n = 26;
+          for (let k = 1; k < n; k++) {
+            const t = k / n, bend = Math.sin(t * Math.PI) * 0.8 * sd;
+            nokta(P(...yerel(...W(hinge[0] + (e[0] - hinge[0]) * t + bend, hinge[1] + (e[1] - hinge[1]) * t))), DAMAR, 0.95 * op);
+          }
+        }
+        const ara = (i, j, t) => {                                          // çapraz damar
+          const a = [hinge[0] + (uc[i][0] - hinge[0]) * t, hinge[1] + (uc[i][1] - hinge[1]) * t];
+          const b = [hinge[0] + (uc[j][0] - hinge[0]) * t, hinge[1] + (uc[j][1] - hinge[1]) * t];
+          for (let k = 0; k <= 6; k++) nokta(P(...yerel(...W(a[0] + (b[0] - a[0]) * k / 6, a[1] + (b[1] - a[1]) * k / 6))), DAMAR, 0.9 * op);
+        };
+        ara(2, 3, 0.42); ara(3, 4, 0.62);
+        for (let a = 0; a < 90; a++) {                                      // zar (seyrek, saydam)
+          const rr = Math.sqrt((a * 0.6180339) % 1) * 0.92, t = a * 2.39996;
+          const e = [cu + ru * rr * Math.cos(t), cv + rv * rr * Math.sin(t)];
+          nokta(P(...yerel(...W(e[0], e[1]))), ZAR, 0.28 * op);
+        }
+      }
+    }
+    // halterler (denge organı): uçuşta kanatlarla zıt fazda titrer
     for (const sd of [-1, 1]) {
-      const c = Math.cos(sd * wa), s = Math.sin(sd * wa);
-      const W = (u, v) => [sd * 2.5 + u * c + v * s, -1 - u * s * 1 + v * c, 9 + Math.abs(u) * wl];
-      for (let a = 0; a < 46; a++) {
-        const t = a / 46 * Math.PI * 2, u = Math.cos(t) * 5.5 * sd + sd * 5.5, v = Math.sin(t) * 15 - 13;
-        nokta(P(...yerel(...W(u, v))), [170, 230, 255], 0.75);
-      }
-      for (let a = 0; a < 40; a++) {
-        const u = sd * (1.5 + (a * 7.3 % 8.5)), v = -2 - (a * 11.7 % 23);
-        nokta(P(...yerel(...W(u, v))), [170, 230, 255], 0.35);
-      }
+      const osc = alt > 0.1 ? Math.sin(T * 55 + Math.PI) * 1.6 : 0;
+      const base = [sd * 4.3, -5.2, 6.2], tip = [sd * 6.0, -7.4, 6.6 + osc];
+      lyerel(base, tip, 4, YESIL, 1);
+      const tw = yerel(...tip);
+      for (let a = 0; a < 14; a++) { const t = a / 14 * Math.PI * 2; nokta(P(tw[0] + Math.cos(t) * 0.8, tw[1] + Math.sin(t) * 0.8, tw[2] + Math.sin(t * 2) * 0.4), PARLAK, 1.2); }
     }
-    }
-    // antenler
-    for (const sd of [-1, 1]) lyerel([sd * 1.5, 14, 6], [sd * 3.5, 17, 10], 4);
-    // hortum
+    // hortum: rostrum -> haustellum -> iki loblu labellum
     const pl = act.yeme * 14;
     if (pl > 0.5) {
-      lyerel([0, 13.5, 1], [0, 14 + pl * 0.75, -pl * 0.65], Math.max(3, Math.round(pl)), [255, 170, 200], 1.3);
-      nokta(P(...yerel(0, 14 + pl * 0.75, -pl * 0.65)), [255, 120, 170], 1.8);
+      const mid = [0, 14.5 + pl * 0.35, 0.2 - pl * 0.35], tip = [0, 14 + pl * 0.75, -pl * 0.65];
+      lyerel([0, 13.6, 0.4], mid, Math.max(3, Math.round(pl * 0.6)), HORTUM, 1.3);
+      lyerel([0.5, 13.6, 0.4], [0.5, mid[1], mid[2]], Math.max(3, Math.round(pl * 0.6)), HORTUM, 0.9);
+      lyerel(mid, tip, Math.max(3, Math.round(pl * 0.6)), HORTUM, 1.3);
+      const tw = yerel(...tip);
+      for (const sd of [-1, 1]) for (let a = 0; a < 22; a++) {
+        const t = a / 22 * Math.PI * 2;
+        const lp = yerel(tip[0] + sd * 0.9 + Math.cos(t) * 1.1, tip[1] + Math.sin(t) * 0.9, tip[2] - 0.3 + Math.sin(t * 2) * 0.3);
+        nokta(P(...lp), [255, 120, 170], 1.5);
+      }
     }
     // dokunma: başın etrafında nokta halkası
     if (d.dokunma) {
@@ -921,6 +1090,7 @@ const fly = (() => {
       for (let a = 0; a < 30; a++) { const t = a / 30 * Math.PI * 2; nokta(P(...yerel(Math.cos(t) * (7 + k * 10), 10.5 + Math.sin(t) * (7 + k * 10), 4)), [255, 255, 255], 1 - k); }
     }
 
+    bosalt();
     // ---- ortam uyaranları (ekrana sabit, 2D)
     ctx.globalCompositeOperation = 'source-over';
     if (d.isik || d.renk) {
@@ -955,17 +1125,19 @@ const fly = (() => {
       }
     }
 
-    // etiket
+    // etiket ve bilgi kutusu: büyük modda büyümesin diye ekran pikselinde (CSS px) çizilir
+    const dpx = window.devicePixelRatio || 1, CW = cv.width / dpx, CH = cv.height / dpx;
+    ctx.setTransform(dpx, 0, 0, dpx, 0, 0);
     ctx.fillStyle = 'rgba(124,139,157,.9)'; ctx.font = '10px ui-monospace,monospace';
     if (r) {
       const ad = Object.keys(d).map(k => META.duyular[k].ad.split(' (')[0]);
       if ((r.kosul.maddeler || []).length) ad.push(...r.kosul.maddeler.map(m => META.ilac_hazir[m].ad.split(' (')[0]));
       else if (Object.keys(r.kosul.ilac || {}).length) ad.push('ilaç');
       if ((r.kosul.lezyon || []).length) ad.push('lezyon');
-      ctx.fillText(ad.length ? ad.join(' + ') : 'uyaran yok', 8, VH - 8);
+      ctx.fillText(ad.length ? ad.join(' + ') : 'uyaran yok', 8, CH - 8);
     }
     ctx.fillStyle = 'rgba(78,93,110,.9)';
-    ctx.fillText('sürükle: döndür', VW - 92, 13);
+    if (CW > 420) ctx.fillText('sürükle: döndür · tekerlek: yakınlaş', CW - 196, 13);
     pusula();
   }
 
