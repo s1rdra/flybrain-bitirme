@@ -42,6 +42,9 @@ input[type=checkbox]{accent-color:var(--accent);width:14px;height:14px}
 .chip{border:1px solid var(--line);background:var(--panel2);border-radius:999px;padding:2px 10px;font-size:12px;cursor:pointer}
 .chip:hover{border-color:var(--muted)}
 .chip.on{border-color:var(--accent);color:var(--accent);background:rgba(102,255,158,.08)}
+.madde label{color:var(--muted)}
+.madde.chg label{color:var(--text)}
+.madde.chg .v{color:var(--warn)}
 .minfo{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.5}
 .minfo:empty{display:none}
 .minfo .m{border-left:2px solid var(--line);padding-left:8px;margin-bottom:6px}
@@ -124,15 +127,8 @@ td.nt{color:var(--dim);font-size:11px}
     <div id="senses"></div>
 
     <h2>Maddeler <span class="x" id="resetDrug">sıfırla</span></h2>
-    <div class="chips" id="drugPresets"></div>
-    <div class="opt" style="margin-top:8px">Doz
-      <select id="doz">
-        <option value="0.5">Düşük</option>
-        <option value="1" selected>Orta</option>
-        <option value="2">Yüksek</option>
-      </select>
-      <span class="hint" style="margin:0">birden fazla madde seçilebilir</span>
-    </div>
+    <div id="drugPresets"></div>
+    <div class="hint">0 = yok · %100 = standart doz · %300 = aşırı doz. Birden fazla madde birlikte verilebilir; isme gelince açıklaması çıkar.</div>
     <div class="minfo" id="minfo"></div>
     <h2>Nörotransmitter ayarı</h2>
     <div id="nts"></div>
@@ -295,33 +291,39 @@ function arayuzKur() {
     S.nt[k + '_row'] = row;
     nts.append(row);
   }
-  S.madde = new Set(); S.maddeTat = {};
+  S.madde = {}; S.maddeTat = {};   // madde -> doz (1 = standart)
   const maddeUygula = () => {
-    const doz = +$('#doz').value, nt = {};
+    const nt = {};
     for (const k of Object.keys(META.nt)) nt[k] = 1;
-    // önceki maddenin açtığı tatları kapat
     for (const t of Object.keys(S.maddeTat)) S.sense[t].row._set(false, META.duyular[t].hz);
     S.maddeTat = {};
     const info = $('#minfo'); info.innerHTML = '';
-    for (const m of S.madde) {
+    for (const [m, doz] of Object.entries(S.madde)) {
+      if (!(doz > 0)) continue;
       const p = META.ilac_hazir[m];
       for (const [k, x] of Object.entries(p.nt)) nt[k] *= Math.max(0, 1 + (x - 1) * doz);
       for (const [t, hz] of Object.entries(p.duyular || {})) {
-        const v = Math.round(hz * doz / 5) * 5; S.maddeTat[t] = v; S.sense[t].row._set(true, v);
+        const v = Math.min(200, Math.round(hz * doz / 5) * 5); S.maddeTat[t] = (S.maddeTat[t] || 0) + v;
       }
-      info.append(el('div', { class: 'm' }, el('b', {}, p.ad), el('span', { class: 't' }, 'modelde: ' + p.temsil),
-        el('br'), p.aciklama));
+      info.append(el('div', { class: 'm' }, el('b', {}, `${p.ad} %${Math.round(doz * 100)}`),
+        el('span', { class: 't' }, 'modelde: ' + p.temsil), el('br'), p.aciklama));
     }
+    for (const [t, v] of Object.entries(S.maddeTat)) S.sense[t].row._set(true, Math.min(200, v));
     for (const k of Object.keys(META.nt)) S.nt[k + '_row']._set(nt[k]);
-    document.querySelectorAll('#drugPresets .chip').forEach(c => c.classList.toggle('on', S.madde.has(c.dataset.m)));
   };
-  const resetDrug = () => { S.madde.clear(); maddeUygula(); };
+  const resetDrug = () => { document.querySelectorAll('#drugPresets .row').forEach(r => r._set(0)); S.madde = {}; maddeUygula(); };
   $('#resetDrug').onclick = resetDrug;
-  $('#doz').onchange = maddeUygula;
   for (const [k, p] of Object.entries(META.ilac_hazir)) {
-    $('#drugPresets').append(el('span', { class: 'chip', 'data-m': k, title: p.aciklama, onclick: () => {
-      S.madde.has(k) ? S.madde.delete(k) : S.madde.add(k); maddeUygula();
-    } }, p.ad.split(' (')[0]));
+    const rg = el('input', { type: 'range', min: 0, max: 300, step: 10, value: 0 });
+    const v = el('span', { class: 'v' }, '0');
+    const row = el('div', { class: 'row nt madde' }, el('label', { title: p.aciklama }, p.ad), rg, v);
+    const upd = () => {
+      const d = +rg.value; v.textContent = d ? '%' + d : '0';
+      row.classList.toggle('chg', d > 0); S.madde[k] = d / 100;
+    };
+    rg.oninput = () => { upd(); maddeUygula(); };
+    row._set = d => { rg.value = d; upd(); };
+    $('#drugPresets').append(row);
   }
 
   // lezyon
@@ -352,7 +354,8 @@ function kosulTopla() {
   const ilac = {};
   for (const k of Object.keys(META.nt)) if (S.nt[k] !== 1) ilac[k] = S.nt[k];
   return { duyular, ilac, lezyon: S.les.map(t => 'type:' + t), sure: +$('#dur').value,
-           maddeler: [...S.madde], doz: +$('#doz').value,
+           maddeler: Object.keys(S.madde).filter(m => S.madde[m] > 0),
+           dozlar: Object.fromEntries(Object.entries(S.madde).filter(([, d]) => d > 0)),
            seed: $('#seed').checked ? 42 : null };
 }
 
@@ -388,8 +391,7 @@ async function calistir() {
 function etiket(k) {
   const p = [];
   for (const [s, hz] of Object.entries(k.duyular)) p.push(`${META.duyular[s].ad} ${hz}Hz`);
-  const dz = { 0.5: 'düşük', 1: 'orta', 2: 'yüksek' }[k.doz] || '';
-  if (k.maddeler && k.maddeler.length) p.push(k.maddeler.map(m => META.ilac_hazir[m].ad.split(' (')[0]).join('+') + ` (${dz} doz)`);
+  if (k.maddeler && k.maddeler.length) p.push(k.maddeler.map(m => `${META.ilac_hazir[m].ad.split(' (')[0]} %${Math.round(k.dozlar[m] * 100)}`).join(' + '));
   else for (const [n, x] of Object.entries(k.ilac)) p.push(`${META.nt[n].split(' ')[0]} %${Math.round(x * 100)}`);
   for (const l of k.lezyon) p.push('−' + l.replace('type:', ''));
   return p.length ? p.join(' · ') : 'Uyaran yok (sessiz beyin)';
