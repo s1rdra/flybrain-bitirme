@@ -27,6 +27,11 @@ docker compose run --rm flybrain test
 
 Beklenen çıktı: `MN9 rate: ~80 Hz` → sanal sinek şekeri tattı ve hortumunu uzatmaya karar verdi.
 
+Birim testlerini (unit tests) çalıştırmak için:
+```
+python -m unittest discover tests
+```
+
 ## 3. Arayüz
 
 ```
